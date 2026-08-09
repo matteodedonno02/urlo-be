@@ -49,7 +49,7 @@ Schema changes go through the migration system under `migrations/` (applied auto
 When a schema change is needed:
 
 1. **Create a `.sql` migration file** in `migrations/` describing the change. Files are applied in alphabetical order on startup, so name them with a sortable prefix (e.g. `0001_xxx.sql`, `0002_yyy.sql`).
-2. **Update/create the matching TypeORM entity model** so the ORM model and the SQL schema stay in sync (the app uses `autoLoadEntities`; `synchronize` is not a substitute for a migration).
+2. **Create the matching TypeORM entity model if not exists, if it exists update it** so the ORM model and the SQL schema stay in sync (the app uses `autoLoadEntities`; `synchronize` is not a substitute for a migration).
 3. **Never alter an already-applied migration file** — its hash is recorded in `schema_migrations` and a mismatch throws at startup. Always ship a new `.sql` file instead.
 4. Keep SQL parameterized/safe; DDL files are plain SQL, but never string-concatenate values into them.
 

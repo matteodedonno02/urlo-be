@@ -17,7 +17,7 @@ interface DbConfig {
 export class MigrationsService implements OnApplicationBootstrap {
   private readonly logger = new Logger(MigrationsService.name);
 
-  constructor(private readonly configService: ConfigService) { }
+  constructor(private readonly configService: ConfigService) {}
 
   async onApplicationBootstrap(): Promise<void> {
     const appDb = this.configService.get<DbConfig>('database');
