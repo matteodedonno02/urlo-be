@@ -46,6 +46,10 @@ lerna-debug.log*
 .temp
 .tmp
 
+# config (keep example, ignore the rest)
+/config.*.json
+!/config.example.json
+
 # Runtime data
 pids
 *.pid
