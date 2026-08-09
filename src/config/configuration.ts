@@ -4,6 +4,9 @@ import { join } from 'path';
 export interface AppConfig {
   host: string;
   port: number;
+  cors?: {
+    whitelist: string[];
+  };
   database?: {
     host: string;
     port: number;
@@ -11,6 +14,7 @@ export interface AppConfig {
     password?: string;
     name?: string;
     synchronize?: boolean;
+    alwaysRebuild?: boolean;
   };
   migrationDatabase?: {
     host: string;

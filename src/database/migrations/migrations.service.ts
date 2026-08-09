@@ -3,7 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { createHash } from 'crypto';
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { createConnection } from 'mysql2/promise';
+import { createConnection, type Connection } from 'mysql2/promise';
 
 interface DbConfig {
   host: string;
@@ -22,6 +22,8 @@ export class MigrationsService implements OnApplicationBootstrap {
   async onApplicationBootstrap(): Promise<void> {
     const appDb = this.configService.get<DbConfig>('database');
     const migDb = this.configService.get<DbConfig>('migrationDatabase');
+    const alwaysRebuild =
+      this.configService.get<boolean>('database.alwaysRebuild') ?? false;
 
     if (!migDb?.host || !migDb?.name) {
       this.logger.warn(
@@ -45,6 +47,14 @@ export class MigrationsService implements OnApplicationBootstrap {
           executed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
         ) ENGINE=InnoDB
       `);
+
+      if (alwaysRebuild) {
+        await this.destroyAppDb(appConn, appDb);
+        await migConn.query('DELETE FROM schema_migrations');
+        this.logger.log(
+          'alwaysRebuild enabled: dropped all app tables and reset migration history.',
+        );
+      }
 
       const dir = join(process.cwd(), 'migrations');
       const files = readdirSync(dir)
@@ -82,6 +92,26 @@ export class MigrationsService implements OnApplicationBootstrap {
       await appConn.end();
       await migConn.end();
     }
+  }
+
+  private async destroyAppDb(
+    appConn: Connection,
+    appDb: DbConfig,
+  ): Promise<void> {
+    const [rows] = await appConn.query(
+      'SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
+      [appDb.name],
+    );
+    const tables = (rows as Array<{ name: string }>).map((r) => r.name);
+
+    if (tables.length === 0) {
+      return;
+    }
+
+    const dropStmt = `SET FOREIGN_KEY_CHECKS = 0; ${tables
+      .map((t) => `DROP TABLE IF EXISTS \`${t}\``)
+      .join('; ')}; SET FOREIGN_KEY_CHECKS = 1;`;
+    await appConn.query(dropStmt);
   }
 
   private dbOptions(db: DbConfig): Record<string, unknown> {

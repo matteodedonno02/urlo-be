@@ -1,13 +1,17 @@
 {
   "host": "127.0.0.1",
   "port": 3000,
+  "cors": {
+    "whitelist": []
+  },
   "database": {
     "host": "localhost",
     "port": 3306,
     "username": "root",
     "password": "password",
     "name": "urlo",
-    "synchronize": false
+    "synchronize": false,
+    "alwaysRebuild": false
   },
   "migrationDatabase": {
     "host": "localhost",

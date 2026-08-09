@@ -106,6 +106,47 @@ describe('MigrationsService', () => {
     );
   });
 
+  it('destroys all app tables and resets history when alwaysRebuild is enabled', async () => {
+    (readdirSync as jest.Mock).mockReturnValue(['001_create.sql']);
+    (readFileSync as jest.Mock).mockReturnValue('CREATE TABLE t (id INT);');
+    appConn.query.mockResolvedValueOnce([[{ name: 'short_urls' }]]);
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        MigrationsService,
+        {
+          provide: ConfigService,
+          useValue: {
+            get: jest.fn((key: string) => {
+              if (key === 'database.alwaysRebuild') {
+                return true;
+              }
+              if (key === 'database') {
+                return { ...dbConfig, alwaysRebuild: true };
+              }
+              if (key === 'migrationDatabase') {
+                return dbConfig;
+              }
+              return undefined;
+            }),
+          },
+        },
+      ],
+    }).compile();
+    service = module.get<MigrationsService>(MigrationsService);
+
+    await service.onApplicationBootstrap();
+
+    expect(appConn.query).toHaveBeenCalledWith(
+      'SELECT TABLE_NAME AS name FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?',
+      ['urlo'],
+    );
+    expect(appConn.query).toHaveBeenCalledWith(
+      expect.stringContaining('DROP TABLE IF EXISTS `short_urls`'),
+    );
+    expect(migConn.query).toHaveBeenCalledWith('DELETE FROM schema_migrations');
+    expect(appConn.query).toHaveBeenCalledWith('CREATE TABLE t (id INT);');
+  });
+
   it('skips migrations when migrationDatabase is not configured', async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
