@@ -12,6 +12,13 @@ export interface AppConfig {
     name?: string;
     synchronize?: boolean;
   };
+  migrationDatabase?: {
+    host: string;
+    port: number;
+    username?: string;
+    password?: string;
+    name?: string;
+  };
 }
 
 export default (): Partial<AppConfig> => {

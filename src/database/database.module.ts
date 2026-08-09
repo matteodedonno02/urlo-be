@@ -1,9 +1,11 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
+import { MigrationsModule } from './migrations/migrations.module';
 
 @Module({
   imports: [
+    MigrationsModule,
     TypeOrmModule.forRootAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -15,9 +17,10 @@ import { TypeOrmModule } from '@nestjs/typeorm';
         password: configService.get<string>('database.password'),
         database: configService.get<string>('database.name'),
         autoLoadEntities: true,
-        synchronize: configService.get<boolean>('database.synchronize') ?? false,
+        synchronize:
+          configService.get<boolean>('database.synchronize') ?? false,
       }),
     }),
   ],
 })
-export class DatabaseModule { }
+export class DatabaseModule {}
