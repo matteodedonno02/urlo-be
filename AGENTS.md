@@ -42,6 +42,19 @@ repositories/   # optional, if using an explicit repository layer
 
 Keep the module self-contained: adding, moving, or deleting a feature should mean touching one folder.
 
+## Migration System
+
+Schema changes go through the migration system under `migrations/` (applied automatically by `src/database/migrations/migrations.service.ts` on app bootstrap) — never execute migration files directly or one-off.
+
+When a schema change is needed:
+
+1. **Create a `.sql` migration file** in `migrations/` describing the change. Files are applied in alphabetical order on startup, so name them with a sortable prefix (e.g. `0001_xxx.sql`, `0002_yyy.sql`).
+2. **Update/create the matching TypeORM entity model** so the ORM model and the SQL schema stay in sync (the app uses `autoLoadEntities`; `synchronize` is not a substitute for a migration).
+3. **Never alter an already-applied migration file** — its hash is recorded in `schema_migrations` and a mismatch throws at startup. Always ship a new `.sql` file instead.
+4. Keep SQL parameterized/safe; DDL files are plain SQL, but never string-concatenate values into them.
+
+The migration runner itself (`src/database/migrations/`) is infrastructure — don't add domain logic there.
+
 ## Naming Conventions
 
 - Domain folders: singular (`user/`, `order/`). Reusable/utility folders: plural (`pipes/`, `utils/`).
