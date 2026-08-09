@@ -1,9 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 @Injectable()
-export class AppService {
-  constructor() { }
-
+export class HealthService {
   isHealthy(): { healthy: boolean } {
     return { healthy: true };
   }
