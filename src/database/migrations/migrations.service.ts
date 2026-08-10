@@ -4,14 +4,7 @@ import { createHash } from 'crypto';
 import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { createConnection, type Connection } from 'mysql2/promise';
-
-interface DbConfig {
-  host: string;
-  port: number;
-  username?: string;
-  password?: string;
-  name?: string;
-}
+import { DbConfig } from '../../models/db-config';
 
 @Injectable()
 export class MigrationsService implements OnApplicationBootstrap {

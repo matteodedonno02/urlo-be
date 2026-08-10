@@ -8,11 +8,11 @@ Guidance for AI coding agents working in this NestJS repository. Follow these co
 src/
   main.ts
   app.module.ts
-  models/        # all interfaces, classes etc
   core/          # app-wide infra: auth, redis, mail, logger (global setup)
   common/        # generic reusable pipes, decorators, types, interceptors
   config/        # @nestjs/config + typed env mapping
   database/      # migrations, seeds, ORM config
+  models/        # shared interfaces/classes other than DTOs and entities
   modules/       # feature/domain modules (vertical slices)
   integrations/  # external/internal API clients (Stripe, AWS, etc.)
   events/        # domain event publishers/listeners
@@ -23,6 +23,7 @@ test/            # e2e tests (*.e2e-spec.ts)
 - Put business logic in `modules/`, one folder per domain (e.g. `modules/users`).
 - Only `core`, `common`, `config`, `database` hold cross-cutting infrastructure — do not put domain logic there.
 - Do not create a top-level `controllers/` or `services/` split across the repo; group by feature instead.
+- Any interface or class that is not a DTO, entity, controller, service, or module goes in the generic `src/models/` folder — not per-module or per-subfolder `models/` folders.
 
 ## Feature Module Layout
 

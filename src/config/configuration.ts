@@ -1,29 +1,6 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
-
-export interface AppConfig {
-  host: string;
-  port: number;
-  cors?: {
-    whitelist: string[];
-  };
-  database?: {
-    host: string;
-    port: number;
-    username?: string;
-    password?: string;
-    name?: string;
-    synchronize?: boolean;
-    alwaysRebuild?: boolean;
-  };
-  migrationDatabase?: {
-    host: string;
-    port: number;
-    username?: string;
-    password?: string;
-    name?: string;
-  };
-}
+import { AppConfig } from '../models/app-config';
 
 export default (): Partial<AppConfig> => {
   const env = process.env.NODE_ENV ?? 'dev';
