@@ -4,6 +4,10 @@ export interface AppConfig {
   cors?: {
     whitelist: string[];
   };
+  jwt?: {
+    secret: string;
+    expiresIn: string;
+  };
   database?: {
     host: string;
     port: number;

@@ -9,7 +9,11 @@ import {
   Patch,
   Post,
   Redirect,
+  Request,
+  UseGuards,
 } from '@nestjs/common';
+import { AuthGuard } from '../auth/auth.guard';
+import type { RequestWithUser } from '../auth/auth.guard';
 import { CreateShortUrlDto } from './dto/create-short-url.dto';
 import { UpdateShortUrlDto } from './dto/update-short-url.dto';
 import { ShortUrlService } from './short-url.service';
@@ -18,14 +22,24 @@ import { ShortUrlService } from './short-url.service';
 export class ShortUrlController {
   constructor(private readonly shortUrlService: ShortUrlService) {}
 
+  @UseGuards(AuthGuard)
   @Post()
-  create(@Body() createShortUrlDto: CreateShortUrlDto) {
-    return this.shortUrlService.create(createShortUrlDto);
+  create(
+    @Body() createShortUrlDto: CreateShortUrlDto,
+    @Request() req: RequestWithUser,
+  ) {
+    return this.shortUrlService.create(createShortUrlDto, req.user.sub);
   }
 
   @Get()
   findAll() {
     return this.shortUrlService.findAll();
+  }
+
+  @UseGuards(AuthGuard)
+  @Get('my')
+  findMine(@Request() req: RequestWithUser) {
+    return this.shortUrlService.findByUserId(req.user.sub);
   }
 
   @Get(':shortCode')

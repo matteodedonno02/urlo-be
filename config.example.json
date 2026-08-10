@@ -4,6 +4,10 @@
   "cors": {
     "whitelist": []
   },
+  "jwt": {
+    "secret": "change-me",
+    "expiresIn": "1h"
+  },
   "database": {
     "host": "localhost",
     "port": 3306,

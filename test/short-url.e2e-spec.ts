@@ -6,15 +6,28 @@ import { AppModule } from './../src/app.module';
 
 interface ShortUrlBody {
   id: string;
+  userId: string;
   shortCode: string;
   originalUrl: string;
   visitCount: number;
 }
 
+interface LoginBody {
+  access_token: string;
+}
+
+interface ProfileBody {
+  sub: string;
+}
+
 describe('ShortUrl (e2e)', () => {
   let app: INestApplication<App>;
   let shortCode = '';
+  let accessToken = '';
+  let loginUserId = '';
 
+  const email = `shorturl-${Date.now()}@example.com`;
+  const password = 'supersecret123';
   const originalUrl = 'https://example.com/path';
 
   beforeAll(async () => {
@@ -28,15 +41,42 @@ describe('ShortUrl (e2e)', () => {
       new ValidationPipe({ whitelist: true, transform: true }),
     );
     await app.init();
+
+    await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({ email, password })
+      .expect(201);
+
+    const login = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email, password })
+      .expect(200);
+
+    accessToken = (login.body as LoginBody).access_token;
+
+    const profile = await request(app.getHttpServer())
+      .get('/auth/profile')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    loginUserId = (profile.body as ProfileBody).sub;
   });
 
   afterAll(async () => {
     await app.close();
   });
 
+  it('POST /short-urls rejects a missing token', async () => {
+    await request(app.getHttpServer())
+      .post('/short-urls')
+      .send({ originalUrl })
+      .expect(401);
+  });
+
   it('POST /short-urls creates a short url with an auto-generated shortCode', async () => {
     const res = await request(app.getHttpServer())
       .post('/short-urls')
+      .set('Authorization', `Bearer ${accessToken}`)
       .send({ originalUrl })
       .expect(201);
 
@@ -45,12 +85,14 @@ describe('ShortUrl (e2e)', () => {
     expect(body.shortCode).toHaveLength(6);
     expect(body.originalUrl).toBe(originalUrl);
     expect(body.visitCount).toBe(0);
+    expect(body.userId).toBeDefined();
     expect(body.id).toBeDefined();
   });
 
   it('POST /short-urls rejects an invalid URL', async () => {
     await request(app.getHttpServer())
       .post('/short-urls')
+      .set('Authorization', `Bearer ${accessToken}`)
       .send({ originalUrl: 'not a valid url' })
       .expect(400);
   });
@@ -58,6 +100,7 @@ describe('ShortUrl (e2e)', () => {
   it('POST /short-urls rejects an unknown property', async () => {
     await request(app.getHttpServer())
       .post('/short-urls')
+      .set('Authorization', `Bearer ${accessToken}`)
       .send({ originalUrl, shortCode: 'abc123' })
       .expect(400);
   });
@@ -70,6 +113,22 @@ describe('ShortUrl (e2e)', () => {
     const body = res.body as ShortUrlBody[];
     expect(Array.isArray(body)).toBe(true);
     expect(body.some((item) => item.shortCode === shortCode)).toBe(true);
+  });
+
+  it('GET /short-urls/my rejects a missing token', async () => {
+    await request(app.getHttpServer()).get('/short-urls/my').expect(401);
+  });
+
+  it('GET /short-urls/my lists only the logged-in user short urls', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/short-urls/my')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    const body = res.body as ShortUrlBody[];
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.some((item) => item.shortCode === shortCode)).toBe(true);
+    expect(body.every((item) => item.userId === loginUserId)).toBe(true);
   });
 
   it('GET /short-urls/:shortCode redirects to the original URL', async () => {

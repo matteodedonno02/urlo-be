@@ -9,8 +9,7 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
   const port = configService.get<number>('port') ?? 3000;
   const host = configService.get<string>('host') ?? '127.0.0.1';
-  const corsWhitelist =
-    configService.get<string[]>('cors.whitelist') ?? [];
+  const corsWhitelist = configService.get<string[]>('cors.whitelist') ?? [];
   app.enableCors({
     origin: (origin, callback) => {
       if (!origin || corsWhitelist.includes(origin)) {

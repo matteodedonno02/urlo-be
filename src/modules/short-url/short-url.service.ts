@@ -21,12 +21,16 @@ export class ShortUrlService {
     private readonly repository: Repository<ShortUrl>,
   ) {}
 
-  async create(dto: CreateShortUrlDto): Promise<ShortUrlResponseDto> {
+  async create(
+    dto: CreateShortUrlDto,
+    userId: string,
+  ): Promise<ShortUrlResponseDto> {
     const shortCode = await this.generateUniqueShortCode();
 
     const entity = this.repository.create({
       originalUrl: dto.originalUrl,
       shortCode,
+      userId,
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
     });
 
@@ -39,6 +43,14 @@ export class ShortUrlService {
 
   async findAll(): Promise<ShortUrlResponseDto[]> {
     const entities = await this.repository.find({
+      order: { createdAt: 'DESC' },
+    });
+    return entities.map((entity) => this.toResponse(entity));
+  }
+
+  async findByUserId(userId: string): Promise<ShortUrlResponseDto[]> {
+    const entities = await this.repository.find({
+      where: { userId },
       order: { createdAt: 'DESC' },
     });
     return entities.map((entity) => this.toResponse(entity));
@@ -130,6 +142,7 @@ export class ShortUrlService {
   private toResponse(entity: ShortUrl): ShortUrlResponseDto {
     return {
       id: entity.id,
+      userId: entity.userId,
       shortCode: entity.shortCode,
       originalUrl: entity.originalUrl,
       visitCount: entity.visitCount,

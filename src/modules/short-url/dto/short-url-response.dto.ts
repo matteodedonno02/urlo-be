@@ -1,5 +1,6 @@
 export class ShortUrlResponseDto {
   id!: string;
+  userId!: string;
   shortCode!: string;
   originalUrl!: string;
   visitCount!: number;

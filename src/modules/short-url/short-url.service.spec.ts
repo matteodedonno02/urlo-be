@@ -16,6 +16,7 @@ describe('ShortUrlService', () => {
 
   const mockEntity = (overrides: Partial<ShortUrl> = {}): ShortUrl => ({
     id: 'c3f6a2b8-9d1e-4f0a-8b7c-5e4d3c2b1a09',
+    userId: 'user-1',
     shortCode: 'abc123',
     originalUrl: 'https://example.com',
     visitCount: 0,
@@ -51,9 +52,10 @@ describe('ShortUrlService', () => {
       repository.create.mockReturnValue(entity);
       repository.save.mockResolvedValue(entity);
 
-      const result = await service.create({
-        originalUrl: 'https://example.com',
-      });
+      const result = await service.create(
+        { originalUrl: 'https://example.com' },
+        'user-1',
+      );
 
       const generatedCode = repository.create.mock.calls[0][0].shortCode;
       expect(generatedCode).toHaveLength(6);
@@ -63,10 +65,12 @@ describe('ShortUrlService', () => {
       expect(repository.create).toHaveBeenCalledWith({
         originalUrl: 'https://example.com',
         shortCode: generatedCode,
+        userId: 'user-1',
         expiresAt: null,
       });
       expect(result).toEqual({
         id: 'c3f6a2b8-9d1e-4f0a-8b7c-5e4d3c2b1a09',
+        userId: 'user-1',
         shortCode: 'abc123',
         originalUrl: 'https://example.com',
         visitCount: 0,
@@ -82,9 +86,10 @@ describe('ShortUrlService', () => {
       repository.create.mockReturnValue(entity);
       repository.save.mockResolvedValue(entity);
 
-      const result = await service.create({
-        originalUrl: 'https://example.com',
-      });
+      const result = await service.create(
+        { originalUrl: 'https://example.com' },
+        'user-1',
+      );
 
       const createArg = repository.create.mock.calls[0][0];
       expect(createArg.shortCode).toHaveLength(6);
@@ -106,6 +111,32 @@ describe('ShortUrlService', () => {
       });
       expect(result).toHaveLength(2);
       expect(result[0]).toHaveProperty('shortCode', 'abc123');
+    });
+  });
+
+  describe('findByUserId', () => {
+    it('should return only the short urls of the given user', async () => {
+      repository.find.mockResolvedValue([
+        mockEntity(),
+        mockEntity({ id: 'e1a2b3c4-5d6e-4f7a-8b9c-0d1e2f3a4b5c' }),
+      ]);
+
+      const result = await service.findByUserId('user-1');
+
+      expect(repository.find).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        order: { createdAt: 'DESC' },
+      });
+      expect(result).toHaveLength(2);
+      expect(result[0]).toHaveProperty('shortCode', 'abc123');
+    });
+
+    it('should return an empty array when the user has no short urls', async () => {
+      repository.find.mockResolvedValue([]);
+
+      const result = await service.findByUserId('user-1');
+
+      expect(result).toEqual([]);
     });
   });
 
