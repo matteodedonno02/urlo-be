@@ -8,6 +8,7 @@ Guidance for AI coding agents working in this NestJS repository. Follow these co
 src/
   main.ts
   app.module.ts
+  models/        # all interfaces, classes etc
   core/          # app-wide infra: auth, redis, mail, logger (global setup)
   common/        # generic reusable pipes, decorators, types, interceptors
   config/        # @nestjs/config + typed env mapping

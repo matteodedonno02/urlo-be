@@ -16,11 +16,9 @@ import { MigrationsModule } from './migrations/migrations.module';
         username: configService.get<string>('database.username'),
         password: configService.get<string>('database.password'),
         database: configService.get<string>('database.name'),
-        autoLoadEntities: true,
-        synchronize:
-          configService.get<boolean>('database.synchronize') ?? false,
+        autoLoadEntities: true
       }),
     }),
   ],
 })
-export class DatabaseModule {}
+export class DatabaseModule { }

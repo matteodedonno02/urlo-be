@@ -62,7 +62,10 @@ export class MigrationsService implements OnApplicationBootstrap {
         .sort();
 
       for (const file of files) {
-        const sql = readFileSync(join(dir, file), 'utf8');
+        const sql = readFileSync(join(dir, file), 'utf8').replace(
+          /\r\n/g,
+          '\n',
+        );
         const hash = createHash('sha256').update(sql).digest('hex');
 
         const [rows] = await migConn.query(

@@ -10,7 +10,6 @@
     "username": "root",
     "password": "password",
     "name": "urlo",
-    "synchronize": false,
     "alwaysRebuild": false
   },
   "migrationDatabase": {
