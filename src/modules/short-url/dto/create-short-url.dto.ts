@@ -1,7 +1,8 @@
-import { IsDateString, IsOptional, IsUrl, MaxLength } from 'class-validator';
+import { IsDateString, IsOptional, MaxLength } from 'class-validator';
+import { IsSafeRedirectUrl } from '../validators/safe-redirect-url.validator';
 
 export class CreateShortUrlDto {
-  @IsUrl({ require_tld: false }, { message: 'originalUrl must be a valid URL' })
+  @IsSafeRedirectUrl()
   @MaxLength(2048)
   originalUrl!: string;
 

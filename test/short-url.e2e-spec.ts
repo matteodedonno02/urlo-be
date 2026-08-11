@@ -129,6 +129,30 @@ describe('ShortUrl (e2e)', () => {
       .expect(400);
   });
 
+  it('POST /short-urls rejects a non-http(s) scheme', async () => {
+    await request(app.getHttpServer())
+      .post('/short-urls')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ originalUrl: 'ftp://example.com' })
+      .expect(400);
+  });
+
+  it('POST /short-urls rejects a private/internal URL', async () => {
+    await request(app.getHttpServer())
+      .post('/short-urls')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ originalUrl: 'http://192.168.1.1' })
+      .expect(400);
+  });
+
+  it('POST /short-urls rejects a loopback URL', async () => {
+    await request(app.getHttpServer())
+      .post('/short-urls')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ originalUrl: 'http://localhost:8080' })
+      .expect(400);
+  });
+
   it('POST /short-urls rejects an unknown property', async () => {
     await request(app.getHttpServer())
       .post('/short-urls')
@@ -228,6 +252,21 @@ describe('ShortUrl (e2e)', () => {
       .set('Authorization', `Bearer ${foreignToken}`)
       .send({ originalUrl })
       .expect(403);
+  });
+
+  it('PATCH /short-urls/:id rejects an unsafe URL', async () => {
+    const list = await request(app.getHttpServer())
+      .get('/short-urls/my')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    const body = list.body as ShortUrlBody[];
+    const item = body.find((entry) => entry.shortCode === shortCode);
+
+    await request(app.getHttpServer())
+      .patch(`/short-urls/${item!.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ originalUrl: 'http://169.254.169.254/latest/meta-data' })
+      .expect(400);
   });
 
   it('PATCH /short-urls/:id updates the short url', async () => {

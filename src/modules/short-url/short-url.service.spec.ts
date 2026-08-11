@@ -201,6 +201,17 @@ describe('ShortUrlService', () => {
 
       await expect(service.resolve('nope')).rejects.toThrow(NotFoundException);
     });
+
+    it('should not redirect to a stored unsafe URL', async () => {
+      repository.findOneBy.mockResolvedValue(
+        mockEntity({ originalUrl: 'http://192.168.1.1' }),
+      );
+
+      await expect(service.resolve('abc123')).rejects.toThrow(
+        NotFoundException,
+      );
+      expect(repository.save).not.toHaveBeenCalled();
+    });
   });
 
   describe('update', () => {

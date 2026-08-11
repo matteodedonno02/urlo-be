@@ -13,6 +13,7 @@ import { CreateShortUrlDto } from './dto/create-short-url.dto';
 import { UpdateShortUrlDto } from './dto/update-short-url.dto';
 import { ShortUrlResponseDto } from './dto/short-url-response.dto';
 import { ShortUrl } from './entities/short-url.entity';
+import { isSafeRedirectUrl } from './validators/safe-redirect-url.validator';
 
 const SHORT_CODE_ALPHABET =
   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-';
@@ -72,6 +73,9 @@ export class ShortUrlService {
 
   async resolve(shortCode: string): Promise<ShortUrlResponseDto> {
     const entity = await this.findByShortCode(shortCode);
+    if (!isSafeRedirectUrl(entity.originalUrl)) {
+      throw new NotFoundException(`Short URL "${shortCode}" not found`);
+    }
     entity.visitCount += 1;
     await this.repository.save(entity);
     return this.toResponse(entity);
