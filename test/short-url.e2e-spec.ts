@@ -2,7 +2,10 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
+import * as bcrypt from 'bcryptjs';
+import { UserRole } from './../src/models/user-role.enum';
 import { AppModule } from './../src/app.module';
+import { UserService } from './../src/modules/user/user.service';
 
 interface ShortUrlBody {
   id: string;
@@ -26,6 +29,7 @@ describe('ShortUrl (e2e)', () => {
   let accessToken = '';
   let loginUserId = '';
   let foreignToken = '';
+  let adminToken = '';
 
   const email = `shorturl-${Date.now()}@example.com`;
   const foreignEmail = `foreign-${Date.now()}@example.com`;
@@ -74,6 +78,21 @@ describe('ShortUrl (e2e)', () => {
       .expect(200);
 
     foreignToken = (foreignLogin.body as LoginBody).access_token;
+
+    const userService = app.get(UserService);
+    const adminEmail = `admin-${Date.now()}@example.com`;
+    await userService.create(
+      adminEmail,
+      await bcrypt.hash(password, 10),
+      UserRole.ADMIN,
+    );
+
+    const adminLogin = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: adminEmail, password })
+      .expect(200);
+
+    adminToken = (adminLogin.body as LoginBody).access_token;
   });
 
   afterAll(async () => {
@@ -119,9 +138,21 @@ describe('ShortUrl (e2e)', () => {
       .expect(400);
   });
 
-  it('GET /short-urls lists short urls', async () => {
+  it('GET /short-urls rejects a missing token', async () => {
+    await request(app.getHttpServer()).get('/short-urls').expect(401);
+  });
+
+  it('GET /short-urls rejects a non-admin user', async () => {
+    await request(app.getHttpServer())
+      .get('/short-urls')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(403);
+  });
+
+  it('GET /short-urls lists short urls for an admin', async () => {
     const res = await request(app.getHttpServer())
       .get('/short-urls')
+      .set('Authorization', `Bearer ${adminToken}`)
       .expect(200);
 
     const body = res.body as ShortUrlBody[];
@@ -155,7 +186,8 @@ describe('ShortUrl (e2e)', () => {
 
   it('GET /short-urls/:shortCode increments the visit count', async () => {
     const res = await request(app.getHttpServer())
-      .get('/short-urls')
+      .get('/short-urls/my')
+      .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
 
     const body = res.body as ShortUrlBody[];
@@ -171,7 +203,8 @@ describe('ShortUrl (e2e)', () => {
 
   it('PATCH /short-urls/:id rejects a missing token', async () => {
     const list = await request(app.getHttpServer())
-      .get('/short-urls')
+      .get('/short-urls/my')
+      .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     const body = list.body as ShortUrlBody[];
     const item = body.find((entry) => entry.shortCode === shortCode);
@@ -184,7 +217,8 @@ describe('ShortUrl (e2e)', () => {
 
   it('PATCH /short-urls/:id rejects a non-owner', async () => {
     const list = await request(app.getHttpServer())
-      .get('/short-urls')
+      .get('/short-urls/my')
+      .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     const body = list.body as ShortUrlBody[];
     const item = body.find((entry) => entry.shortCode === shortCode);
@@ -199,7 +233,8 @@ describe('ShortUrl (e2e)', () => {
 
   it('PATCH /short-urls/:id updates the short url', async () => {
     const list = await request(app.getHttpServer())
-      .get('/short-urls')
+      .get('/short-urls/my')
+      .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     const body = list.body as ShortUrlBody[];
     const mine = body.filter((entry) => entry.userId === loginUserId);
@@ -218,7 +253,8 @@ describe('ShortUrl (e2e)', () => {
 
   it('DELETE /short-urls/:id rejects a missing token', async () => {
     const list = await request(app.getHttpServer())
-      .get('/short-urls')
+      .get('/short-urls/my')
+      .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     const body = list.body as ShortUrlBody[];
     const item = body.find((entry) => entry.shortCode === shortCode);
@@ -230,7 +266,8 @@ describe('ShortUrl (e2e)', () => {
 
   it('DELETE /short-urls/:id rejects a non-owner', async () => {
     const list = await request(app.getHttpServer())
-      .get('/short-urls')
+      .get('/short-urls/my')
+      .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     const body = list.body as ShortUrlBody[];
     const item = body.find((entry) => entry.shortCode === shortCode);
@@ -244,7 +281,8 @@ describe('ShortUrl (e2e)', () => {
 
   it('DELETE /short-urls/:id removes the short url owned by the user', async () => {
     const list = await request(app.getHttpServer())
-      .get('/short-urls')
+      .get('/short-urls/my')
+      .set('Authorization', `Bearer ${accessToken}`)
       .expect(200);
     const body = list.body as ShortUrlBody[];
     const mine = body.filter((entry) => entry.userId === loginUserId);

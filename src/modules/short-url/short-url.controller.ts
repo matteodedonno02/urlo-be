@@ -12,6 +12,7 @@ import {
   Request,
   UseGuards,
 } from '@nestjs/common';
+import { AdminGuard } from '../auth/admin.guard';
 import { AuthGuard } from '../auth/auth.guard';
 import type { RequestWithUser } from '../auth/auth.guard';
 import { CreateShortUrlDto } from './dto/create-short-url.dto';
@@ -31,6 +32,7 @@ export class ShortUrlController {
     return this.shortUrlService.create(createShortUrlDto, req.user.sub);
   }
 
+  @UseGuards(AuthGuard, AdminGuard)
   @Get()
   findAll() {
     return this.shortUrlService.findAll();
