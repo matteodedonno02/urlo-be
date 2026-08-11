@@ -8,6 +8,10 @@ export interface AppConfig {
     secret: string;
     expiresIn: string;
   };
+  admin?: {
+    email: string;
+    password: string;
+  };
   database?: {
     host: string;
     port: number;

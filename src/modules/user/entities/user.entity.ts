@@ -21,6 +21,13 @@ export class User {
   @Column({ type: 'varchar', length: 20, default: UserRole.STANDARD })
   role!: UserRole;
 
+  @Column({
+    type: 'boolean',
+    default: false,
+    name: 'must_change_password',
+  })
+  mustChangePassword!: boolean;
+
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt!: Date;
 

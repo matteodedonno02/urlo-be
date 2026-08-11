@@ -16,13 +16,19 @@ export class UserService {
     email: string,
     passwordHash: string,
     role: UserRole = UserRole.STANDARD,
+    mustChangePassword = false,
   ): Promise<User> {
     const existing = await this.repository.findOneBy({ email });
     if (existing) {
       throw new ConflictException(`Email "${email}" is already registered`);
     }
 
-    const entity = this.repository.create({ email, passwordHash, role });
+    const entity = this.repository.create({
+      email,
+      passwordHash,
+      role,
+      mustChangePassword,
+    });
 
     try {
       return await this.repository.save(entity);
@@ -39,6 +45,13 @@ export class UserService {
     return this.repository.findOneBy({ id });
   }
 
+  async updatePassword(id: string, passwordHash: string): Promise<void> {
+    await this.repository.update(id, {
+      passwordHash,
+      mustChangePassword: false,
+    });
+  }
+
   async findAll(): Promise<UserResponseDto[]> {
     const entities = await this.repository.find({
       order: { createdAt: 'DESC' },
@@ -51,6 +64,7 @@ export class UserService {
       id: entity.id,
       email: entity.email,
       role: entity.role,
+      mustChangePassword: entity.mustChangePassword,
       createdAt: entity.createdAt,
       updatedAt: entity.updatedAt,
     };

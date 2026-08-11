@@ -8,6 +8,10 @@
     "secret": "change-me",
     "expiresIn": "1h"
   },
+  "admin": {
+    "email": "admin@urlo.local",
+    "password": "change-me-admin-password"
+  },
   "database": {
     "host": "localhost",
     "port": 3306,

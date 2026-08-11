@@ -9,7 +9,7 @@ import { User } from './entities/user.entity';
 describe('UserService', () => {
   let service: UserService;
   let repository: jest.Mocked<
-    Pick<Repository<User>, 'create' | 'find' | 'findOneBy' | 'save'>
+    Pick<Repository<User>, 'create' | 'find' | 'findOneBy' | 'save' | 'update'>
   >;
 
   const mockEntity = (overrides: Partial<User> = {}): User => ({
@@ -17,6 +17,7 @@ describe('UserService', () => {
     email: 'user@example.com',
     passwordHash: 'hashed-password',
     role: UserRole.STANDARD,
+    mustChangePassword: false,
     createdAt: new Date('2024-01-01T00:00:00Z'),
     updatedAt: new Date('2024-01-01T00:00:00Z'),
     ...overrides,
@@ -28,6 +29,7 @@ describe('UserService', () => {
       find: jest.fn(),
       findOneBy: jest.fn(),
       save: jest.fn(),
+      update: jest.fn(),
     };
 
     const app: TestingModule = await Test.createTestingModule({
@@ -59,8 +61,30 @@ describe('UserService', () => {
         email: 'user@example.com',
         passwordHash: 'hashed-password',
         role: UserRole.STANDARD,
+        mustChangePassword: false,
       });
       expect(result).toBe(entity);
+    });
+
+    it('should create the user with mustChangePassword set when requested', async () => {
+      const entity = mockEntity({ mustChangePassword: true });
+      repository.findOneBy.mockResolvedValue(null);
+      repository.create.mockReturnValue(entity);
+      repository.save.mockResolvedValue(entity);
+
+      await service.create(
+        'user@example.com',
+        'hashed-password',
+        UserRole.ADMIN,
+        true,
+      );
+
+      expect(repository.create).toHaveBeenCalledWith({
+        email: 'user@example.com',
+        passwordHash: 'hashed-password',
+        role: UserRole.ADMIN,
+        mustChangePassword: true,
+      });
     });
 
     it('should throw ConflictException when email already exists', async () => {
@@ -114,6 +138,19 @@ describe('UserService', () => {
     });
   });
 
+  describe('updatePassword', () => {
+    it('should update the password hash and clear the change flag', async () => {
+      repository.update.mockResolvedValue({ affected: 1 } as never);
+
+      await service.updatePassword('user-id', 'new-hashed-password');
+
+      expect(repository.update).toHaveBeenCalledWith('user-id', {
+        passwordHash: 'new-hashed-password',
+        mustChangePassword: false,
+      });
+    });
+  });
+
   describe('findAll', () => {
     it('should return all users as responses ordered by creation date', async () => {
       const entities = [mockEntity(), mockEntity({ id: 'other-id' })];
@@ -139,6 +176,7 @@ describe('UserService', () => {
         id: 'c3f6a2b8-9d1e-4f0a-8b7c-5e4d3c2b1a09',
         email: 'user@example.com',
         role: UserRole.STANDARD,
+        mustChangePassword: false,
         createdAt: new Date('2024-01-01T00:00:00Z'),
         updatedAt: new Date('2024-01-01T00:00:00Z'),
       });

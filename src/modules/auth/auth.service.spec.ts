@@ -18,7 +18,10 @@ const bcryptMock = bcrypt as jest.Mocked<typeof bcrypt>;
 describe('AuthService', () => {
   let service: AuthService;
   let userService: jest.Mocked<
-    Pick<UserService, 'findByEmail' | 'create' | 'toResponse'>
+    Pick<
+      UserService,
+      'findByEmail' | 'findById' | 'create' | 'toResponse' | 'updatePassword'
+    >
   >;
   let jwtService: jest.Mocked<Pick<JwtService, 'signAsync'>>;
 
@@ -27,6 +30,7 @@ describe('AuthService', () => {
     email: 'user@example.com',
     passwordHash: 'hashed-password',
     role: UserRole.STANDARD,
+    mustChangePassword: false,
     createdAt: new Date('2024-01-01T00:00:00Z'),
     updatedAt: new Date('2024-01-01T00:00:00Z'),
   };
@@ -34,8 +38,10 @@ describe('AuthService', () => {
   beforeEach(async () => {
     userService = {
       findByEmail: jest.fn(),
+      findById: jest.fn(),
       create: jest.fn(),
       toResponse: jest.fn(),
+      updatePassword: jest.fn(),
     };
     jwtService = { signAsync: jest.fn() };
 
@@ -94,7 +100,26 @@ describe('AuthService', () => {
         email: mockUser.email,
         role: mockUser.role,
       });
-      expect(result).toEqual({ access_token: 'signed-token' });
+      expect(result).toEqual({
+        access_token: 'signed-token',
+        mustChangePassword: false,
+      });
+    });
+
+    it('should return mustChangePassword true when the user must rotate it', async () => {
+      userService.findByEmail.mockResolvedValue({
+        ...mockUser,
+        mustChangePassword: true,
+      });
+      bcryptMock.compare.mockResolvedValue(true as never);
+      jwtService.signAsync.mockResolvedValue('signed-token');
+
+      const result = await service.signIn('user@example.com', 'plain-password');
+
+      expect(result).toEqual({
+        access_token: 'signed-token',
+        mustChangePassword: true,
+      });
     });
 
     it('should throw UnauthorizedException for an unknown email', async () => {
@@ -114,6 +139,55 @@ describe('AuthService', () => {
         service.signIn('user@example.com', 'wrong-password'),
       ).rejects.toThrow(UnauthorizedException);
       expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('changePassword', () => {
+    it('should update the password hash when the current password matches', async () => {
+      userService.findById.mockResolvedValue(mockUser);
+      bcryptMock.compare.mockResolvedValue(true as never);
+      bcryptMock.hash.mockResolvedValue('new-hashed-password' as never);
+      userService.updatePassword.mockResolvedValue(undefined);
+
+      await service.changePassword(
+        mockUser.id,
+        'current-password',
+        'new-password',
+      );
+
+      expect(userService.findById).toHaveBeenCalledWith(mockUser.id);
+      expect(bcryptMock.compare).toHaveBeenCalledWith(
+        'current-password',
+        'hashed-password',
+      );
+      expect(bcryptMock.hash).toHaveBeenCalledWith('new-password', 10);
+      expect(userService.updatePassword).toHaveBeenCalledWith(
+        mockUser.id,
+        'new-hashed-password',
+      );
+    });
+
+    it('should throw UnauthorizedException for an unknown user', async () => {
+      userService.findById.mockResolvedValue(null);
+
+      await expect(
+        service.changePassword('nope', 'current-password', 'new-password'),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(userService.updatePassword).not.toHaveBeenCalled();
+    });
+
+    it('should throw UnauthorizedException when the current password is wrong', async () => {
+      userService.findById.mockResolvedValue(mockUser);
+      bcryptMock.compare.mockResolvedValue(false as never);
+
+      await expect(
+        service.changePassword(
+          mockUser.id,
+          'wrong-current-password',
+          'new-password',
+        ),
+      ).rejects.toThrow(UnauthorizedException);
+      expect(userService.updatePassword).not.toHaveBeenCalled();
     });
   });
 });

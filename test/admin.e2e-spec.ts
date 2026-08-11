@@ -19,6 +19,7 @@ interface UserBody {
 
 describe('Admin (e2e)', () => {
   let app: INestApplication<App>;
+  let userService: UserService;
   let adminToken = '';
   let standardToken = '';
   let standardUserId = '';
@@ -52,7 +53,7 @@ describe('Admin (e2e)', () => {
     );
     await app.init();
 
-    const userService = app.get(UserService);
+    userService = app.get(UserService);
     await userService.create(
       adminEmail,
       await bcrypt.hash(password, 10),
@@ -155,5 +156,81 @@ describe('Admin (e2e)', () => {
       .get(`/users/${standardUserId}/short-urls`)
       .set(bearer(standardToken))
       .expect(403);
+  });
+
+  it('PATCH /password rejects a missing token', async () => {
+    await request(app.getHttpServer())
+      .patch('/password')
+      .send({ currentPassword: password, newPassword: 'new-password-123' })
+      .expect(401);
+  });
+
+  it('PATCH /password rejects a non-admin user', async () => {
+    await request(app.getHttpServer())
+      .patch('/password')
+      .set(bearer(standardToken))
+      .send({ currentPassword: password, newPassword: 'new-password-123' })
+      .expect(403);
+  });
+
+  it('PATCH /password rejects a short new password', async () => {
+    await request(app.getHttpServer())
+      .patch('/password')
+      .set(bearer(adminToken))
+      .send({ currentPassword: password, newPassword: 'short' })
+      .expect(400);
+  });
+
+  it('PATCH /password rejects a wrong current password', async () => {
+    await request(app.getHttpServer())
+      .patch('/password')
+      .set(bearer(adminToken))
+      .send({
+        currentPassword: 'wrong-current-password',
+        newPassword: 'new-password-123',
+      })
+      .expect(401);
+  });
+
+  it('PATCH /password changes the admin password', async () => {
+    const newPassword = 'rotated-password-456';
+
+    await request(app.getHttpServer())
+      .patch('/password')
+      .set(bearer(adminToken))
+      .send({ currentPassword: password, newPassword })
+      .expect(200);
+
+    const afterLogin = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: adminEmail, password: newPassword })
+      .expect(200);
+    expect(
+      (afterLogin.body as { mustChangePassword: boolean }).mustChangePassword,
+    ).toBe(false);
+
+    await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: adminEmail, password })
+      .expect(401);
+  });
+
+  it('POST /auth/login reports mustChangePassword for an admin that must rotate', async () => {
+    const email = `mustchange-${Date.now()}@example.com`;
+    await userService.create(
+      email,
+      await bcrypt.hash(password, 10),
+      UserRole.ADMIN,
+      true,
+    );
+
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email, password })
+      .expect(200);
+
+    expect(
+      (res.body as { mustChangePassword: boolean }).mustChangePassword,
+    ).toBe(true);
   });
 });

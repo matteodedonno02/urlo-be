@@ -24,7 +24,7 @@ export class AuthService {
   async signIn(
     email: string,
     password: string,
-  ): Promise<{ access_token: string }> {
+  ): Promise<{ access_token: string; mustChangePassword: boolean }> {
     const user = await this.userService.findByEmail(email);
     if (!user) {
       throw new UnauthorizedException();
@@ -40,6 +40,28 @@ export class AuthService {
       email: user.email,
       role: user.role,
     };
-    return { access_token: await this.jwtService.signAsync(payload) };
+    return {
+      access_token: await this.jwtService.signAsync(payload),
+      mustChangePassword: user.mustChangePassword,
+    };
+  }
+
+  async changePassword(
+    userId: string,
+    currentPassword: string,
+    newPassword: string,
+  ): Promise<void> {
+    const user = await this.userService.findById(userId);
+    if (!user) {
+      throw new UnauthorizedException();
+    }
+
+    const isMatch = await bcrypt.compare(currentPassword, user.passwordHash);
+    if (!isMatch) {
+      throw new UnauthorizedException('Current password is incorrect');
+    }
+
+    const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
+    await this.userService.updatePassword(userId, passwordHash);
   }
 }
