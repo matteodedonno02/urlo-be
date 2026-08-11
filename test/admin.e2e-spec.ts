@@ -42,7 +42,6 @@ describe('Admin (e2e)', () => {
   });
 
   beforeAll(async () => {
-    process.env.NODE_ENV = 'dev';
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();

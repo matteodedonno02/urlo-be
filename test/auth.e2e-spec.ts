@@ -23,7 +23,6 @@ describe('Auth (e2e)', () => {
   let app: INestApplication<App>;
 
   beforeAll(async () => {
-    process.env.NODE_ENV = 'dev';
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();

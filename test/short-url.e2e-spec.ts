@@ -37,7 +37,6 @@ describe('ShortUrl (e2e)', () => {
   const originalUrl = 'https://example.com/path';
 
   beforeAll(async () => {
-    process.env.NODE_ENV = 'dev';
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
