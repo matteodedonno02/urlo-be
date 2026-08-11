@@ -25,8 +25,10 @@ describe('ShortUrl (e2e)', () => {
   let shortCode = '';
   let accessToken = '';
   let loginUserId = '';
+  let foreignToken = '';
 
   const email = `shorturl-${Date.now()}@example.com`;
+  const foreignEmail = `foreign-${Date.now()}@example.com`;
   const password = 'supersecret123';
   const originalUrl = 'https://example.com/path';
 
@@ -60,6 +62,18 @@ describe('ShortUrl (e2e)', () => {
       .expect(200);
 
     loginUserId = (profile.body as ProfileBody).sub;
+
+    await request(app.getHttpServer())
+      .post('/auth/register')
+      .send({ email: foreignEmail, password })
+      .expect(201);
+
+    const foreignLogin = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email: foreignEmail, password })
+      .expect(200);
+
+    foreignToken = (foreignLogin.body as LoginBody).access_token;
   });
 
   afterAll(async () => {
@@ -155,17 +169,46 @@ describe('ShortUrl (e2e)', () => {
       .expect(404);
   });
 
-  it('PATCH /short-urls/:id updates the short url', async () => {
+  it('PATCH /short-urls/:id rejects a missing token', async () => {
     const list = await request(app.getHttpServer())
       .get('/short-urls')
       .expect(200);
     const body = list.body as ShortUrlBody[];
     const item = body.find((entry) => entry.shortCode === shortCode);
-    expect(item).toBeDefined();
+
+    await request(app.getHttpServer())
+      .patch(`/short-urls/${item!.id}`)
+      .send({ originalUrl })
+      .expect(401);
+  });
+
+  it('PATCH /short-urls/:id rejects a non-owner', async () => {
+    const list = await request(app.getHttpServer())
+      .get('/short-urls')
+      .expect(200);
+    const body = list.body as ShortUrlBody[];
+    const item = body.find((entry) => entry.shortCode === shortCode);
+    expect(item?.userId).toBe(loginUserId);
+
+    await request(app.getHttpServer())
+      .patch(`/short-urls/${item!.id}`)
+      .set('Authorization', `Bearer ${foreignToken}`)
+      .send({ originalUrl })
+      .expect(403);
+  });
+
+  it('PATCH /short-urls/:id updates the short url', async () => {
+    const list = await request(app.getHttpServer())
+      .get('/short-urls')
+      .expect(200);
+    const body = list.body as ShortUrlBody[];
+    const mine = body.filter((entry) => entry.userId === loginUserId);
+    expect(mine.length).toBeGreaterThan(0);
 
     const updatedUrl = `${originalUrl}/updated`;
     const res = await request(app.getHttpServer())
-      .patch(`/short-urls/${item!.id}`)
+      .patch(`/short-urls/${mine[0].id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
       .send({ originalUrl: updatedUrl })
       .expect(200);
 
@@ -173,20 +216,48 @@ describe('ShortUrl (e2e)', () => {
     expect(patched.originalUrl).toBe(updatedUrl);
   });
 
-  it('DELETE /short-urls/:id removes the short url', async () => {
+  it('DELETE /short-urls/:id rejects a missing token', async () => {
     const list = await request(app.getHttpServer())
       .get('/short-urls')
       .expect(200);
     const body = list.body as ShortUrlBody[];
     const item = body.find((entry) => entry.shortCode === shortCode);
-    expect(item).toBeDefined();
 
     await request(app.getHttpServer())
       .delete(`/short-urls/${item!.id}`)
+      .expect(401);
+  });
+
+  it('DELETE /short-urls/:id rejects a non-owner', async () => {
+    const list = await request(app.getHttpServer())
+      .get('/short-urls')
+      .expect(200);
+    const body = list.body as ShortUrlBody[];
+    const item = body.find((entry) => entry.shortCode === shortCode);
+    expect(item?.userId).toBe(loginUserId);
+
+    await request(app.getHttpServer())
+      .delete(`/short-urls/${item!.id}`)
+      .set('Authorization', `Bearer ${foreignToken}`)
+      .expect(403);
+  });
+
+  it('DELETE /short-urls/:id removes the short url owned by the user', async () => {
+    const list = await request(app.getHttpServer())
+      .get('/short-urls')
+      .expect(200);
+    const body = list.body as ShortUrlBody[];
+    const mine = body.filter((entry) => entry.userId === loginUserId);
+    expect(mine.length).toBeGreaterThan(0);
+
+    const target = mine[0];
+    await request(app.getHttpServer())
+      .delete(`/short-urls/${target.id}`)
+      .set('Authorization', `Bearer ${accessToken}`)
       .expect(204);
 
     await request(app.getHttpServer())
-      .get(`/short-urls/${shortCode}`)
+      .get(`/short-urls/${target.shortCode}`)
       .expect(404);
   });
 });

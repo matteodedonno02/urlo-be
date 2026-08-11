@@ -1,11 +1,14 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'crypto';
 import { Repository } from 'typeorm';
+import { JwtPayload } from '../../models/jwt-payload';
+import { UserRole } from '../../models/user-role.enum';
 import { CreateShortUrlDto } from './dto/create-short-url.dto';
 import { UpdateShortUrlDto } from './dto/update-short-url.dto';
 import { ShortUrlResponseDto } from './dto/short-url-response.dto';
@@ -77,11 +80,13 @@ export class ShortUrlService {
   async update(
     id: string,
     dto: UpdateShortUrlDto,
+    requester: JwtPayload,
   ): Promise<ShortUrlResponseDto> {
     const entity = await this.repository.findOneBy({ id });
     if (!entity) {
       throw new NotFoundException(`Short URL with id "${id}" not found`);
     }
+    this.assertCanModify(entity, requester);
 
     if (dto.shortCode !== undefined && dto.shortCode !== entity.shortCode) {
       await this.assertShortCodeAvailable(dto.shortCode);
@@ -101,10 +106,18 @@ export class ShortUrlService {
     }
   }
 
-  async remove(id: string): Promise<void> {
-    const result = await this.repository.delete(id);
-    if (!result.affected) {
+  async remove(id: string, requester: JwtPayload): Promise<void> {
+    const entity = await this.repository.findOneBy({ id });
+    if (!entity) {
       throw new NotFoundException(`Short URL with id "${id}" not found`);
+    }
+    this.assertCanModify(entity, requester);
+    await this.repository.remove(entity);
+  }
+
+  private assertCanModify(entity: ShortUrl, requester: JwtPayload): void {
+    if (entity.userId !== requester.sub && requester.role !== UserRole.ADMIN) {
+      throw new ForbiddenException('You are not the owner of this short URL');
     }
   }
 

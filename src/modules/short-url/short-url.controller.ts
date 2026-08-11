@@ -49,17 +49,23 @@ export class ShortUrlController {
     return { url: result.originalUrl, statusCode: HttpStatus.FOUND };
   }
 
+  @UseGuards(AuthGuard)
   @Patch(':id')
   update(
     @Param('id') id: string,
     @Body() updateShortUrlDto: UpdateShortUrlDto,
+    @Request() req: RequestWithUser,
   ) {
-    return this.shortUrlService.update(id, updateShortUrlDto);
+    return this.shortUrlService.update(id, updateShortUrlDto, req.user);
   }
 
+  @UseGuards(AuthGuard)
   @Delete(':id')
   @HttpCode(HttpStatus.NO_CONTENT)
-  async remove(@Param('id') id: string): Promise<void> {
-    await this.shortUrlService.remove(id);
+  async remove(
+    @Param('id') id: string,
+    @Request() req: RequestWithUser,
+  ): Promise<void> {
+    await this.shortUrlService.remove(id, req.user);
   }
 }

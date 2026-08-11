@@ -1,7 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { UserRole } from '../../models/user-role.enum';
 import { ShortUrlService } from './short-url.service';
 import { ShortUrl } from './entities/short-url.entity';
 
@@ -10,9 +15,18 @@ describe('ShortUrlService', () => {
   let repository: jest.Mocked<
     Pick<
       Repository<ShortUrl>,
-      'create' | 'find' | 'findOneBy' | 'save' | 'delete'
+      'create' | 'find' | 'findOneBy' | 'save' | 'remove'
     >
   >;
+
+  const requester = (
+    overrides: Partial<{ sub: string; role: UserRole }> = {},
+  ): { sub: string; email: string; role: UserRole } => ({
+    sub: 'user-1',
+    email: 'user@example.com',
+    role: UserRole.STANDARD,
+    ...overrides,
+  });
 
   const mockEntity = (overrides: Partial<ShortUrl> = {}): ShortUrl => ({
     id: 'c3f6a2b8-9d1e-4f0a-8b7c-5e4d3c2b1a09',
@@ -32,7 +46,7 @@ describe('ShortUrlService', () => {
       find: jest.fn(),
       findOneBy: jest.fn(),
       save: jest.fn(),
-      delete: jest.fn(),
+      remove: jest.fn(),
     };
 
     const app: TestingModule = await Test.createTestingModule({
@@ -198,9 +212,11 @@ describe('ShortUrlService', () => {
         originalUrl: 'https://new.example.com',
       });
 
-      const result = await service.update('1', {
-        originalUrl: 'https://new.example.com',
-      });
+      const result = await service.update(
+        '1',
+        { originalUrl: 'https://new.example.com' },
+        requester(),
+      );
 
       expect(entity.originalUrl).toBe('https://new.example.com');
       expect(result.originalUrl).toBe('https://new.example.com');
@@ -210,7 +226,7 @@ describe('ShortUrlService', () => {
       repository.findOneBy.mockResolvedValue(null);
 
       await expect(
-        service.update('999', { originalUrl: 'https://x.com' }),
+        service.update('999', { originalUrl: 'https://x.com' }, requester()),
       ).rejects.toThrow(NotFoundException);
     });
 
@@ -222,23 +238,70 @@ describe('ShortUrlService', () => {
       );
 
       await expect(
-        service.update('1', { shortCode: 'theirs' }),
+        service.update('1', { shortCode: 'theirs' }, requester()),
       ).rejects.toThrow(ConflictException);
+    });
+
+    it('should throw ForbiddenException when the requester is not the owner', async () => {
+      repository.findOneBy.mockResolvedValue(mockEntity({ userId: 'other' }));
+
+      await expect(
+        service.update('1', { originalUrl: 'https://x.com' }, requester()),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should allow an admin to update someone elses short url', async () => {
+      const entity = mockEntity({ userId: 'other' });
+      repository.findOneBy.mockResolvedValue(entity);
+      repository.save.mockResolvedValue({
+        ...entity,
+        originalUrl: 'https://new.example.com',
+      });
+
+      const result = await service.update(
+        '1',
+        { originalUrl: 'https://new.example.com' },
+        requester({ role: UserRole.ADMIN }),
+      );
+
+      expect(result.originalUrl).toBe('https://new.example.com');
     });
   });
 
   describe('remove', () => {
-    it('should delete the short url', async () => {
-      repository.delete.mockResolvedValue({ affected: 1 } as never);
+    it('should delete the short url owned by the requester', async () => {
+      const entity = mockEntity();
+      repository.findOneBy.mockResolvedValue(entity);
+      repository.remove.mockResolvedValue(entity);
 
-      await expect(service.remove('1')).resolves.toBeUndefined();
-      expect(repository.delete).toHaveBeenCalledWith('1');
+      await expect(service.remove('1', requester())).resolves.toBeUndefined();
+      expect(repository.remove).toHaveBeenCalledWith(entity);
     });
 
-    it('should throw NotFoundException when nothing was deleted', async () => {
-      repository.delete.mockResolvedValue({ affected: 0 } as never);
+    it('should throw NotFoundException for an unknown id', async () => {
+      repository.findOneBy.mockResolvedValue(null);
 
-      await expect(service.remove('999')).rejects.toThrow(NotFoundException);
+      await expect(service.remove('999', requester())).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('should throw ForbiddenException when the requester is not the owner', async () => {
+      repository.findOneBy.mockResolvedValue(mockEntity({ userId: 'other' }));
+
+      await expect(service.remove('1', requester())).rejects.toThrow(
+        ForbiddenException,
+      );
+    });
+
+    it('should allow an admin to remove someone elses short url', async () => {
+      const entity = mockEntity({ userId: 'other' });
+      repository.findOneBy.mockResolvedValue(entity);
+      repository.remove.mockResolvedValue(entity);
+
+      await expect(
+        service.remove('1', requester({ role: UserRole.ADMIN })),
+      ).resolves.toBeUndefined();
     });
   });
 });
