@@ -19,7 +19,14 @@ const dbConfig = {
 describe('MigrationsService', () => {
   let service: MigrationsService;
   let migConn: { query: jest.Mock; end: jest.Mock };
-  let appConn: { query: jest.Mock; end: jest.Mock };
+  let appConn: {
+    query: jest.Mock;
+    end: jest.Mock;
+    beginTransaction: jest.Mock;
+    commit: jest.Mock;
+    rollback: jest.Mock;
+  };
+  let serverConn: { query: jest.Mock; end: jest.Mock };
 
   const makeModule = async () => {
     const module: TestingModule = await Test.createTestingModule({
@@ -49,11 +56,33 @@ describe('MigrationsService', () => {
     appConn = {
       query: jest.fn().mockResolvedValue([[]]),
       end: jest.fn().mockResolvedValue(undefined),
+      beginTransaction: jest.fn().mockResolvedValue(undefined),
+      commit: jest.fn().mockResolvedValue(undefined),
+      rollback: jest.fn().mockResolvedValue(undefined),
+    };
+    serverConn = {
+      query: jest.fn().mockResolvedValue([[]]),
+      end: jest.fn().mockResolvedValue(undefined),
     };
     (createConnection as jest.Mock).mockReset();
     (createConnection as jest.Mock)
+      .mockReturnValueOnce(serverConn)
+      .mockReturnValueOnce(serverConn)
       .mockReturnValueOnce(appConn)
       .mockReturnValueOnce(migConn);
+  });
+
+  it('creates both databases if they do not exist', async () => {
+    (readdirSync as jest.Mock).mockReturnValue([]);
+    service = await makeModule();
+
+    await service.onApplicationBootstrap();
+
+    expect(serverConn.query).toHaveBeenCalledTimes(2);
+    expect(serverConn.query).toHaveBeenCalledWith(
+      'CREATE DATABASE IF NOT EXISTS `urlo` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci',
+    );
+    expect(serverConn.end).toHaveBeenCalledTimes(2);
   });
 
   it('executes a new migration and registers it with the file hash', async () => {
@@ -63,13 +92,48 @@ describe('MigrationsService', () => {
 
     await service.onApplicationBootstrap();
 
+    expect(appConn.beginTransaction).toHaveBeenCalled();
     expect(appConn.query).toHaveBeenCalledWith('CREATE TABLE t (id INT);');
+    expect(appConn.commit).toHaveBeenCalled();
+    expect(appConn.rollback).not.toHaveBeenCalled();
     expect(migConn.query).toHaveBeenCalledWith(
       'INSERT INTO schema_migrations (filename, hash) VALUES (?, ?)',
       ['001_create.sql', expect.any(String)],
     );
     expect(migConn.end).toHaveBeenCalled();
     expect(appConn.end).toHaveBeenCalled();
+  });
+
+  it('rolls back and runs the down SQL when a migration fails', async () => {
+    (readdirSync as jest.Mock).mockReturnValue(['001_create.sql']);
+    (readFileSync as jest.Mock).mockImplementation((path: string) =>
+      path.includes('down') ? 'DROP TABLE t;' : 'CREATE TABLE t (id INT);',
+    );
+    appConn.query.mockRejectedValueOnce(new Error('boom'));
+    service = await makeModule();
+
+    await expect(service.onApplicationBootstrap()).rejects.toThrow('boom');
+
+    expect(appConn.beginTransaction).toHaveBeenCalled();
+    expect(appConn.rollback).toHaveBeenCalled();
+    expect(appConn.query).toHaveBeenCalledWith('DROP TABLE t;');
+    expect(migConn.query).not.toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO'),
+    );
+  });
+
+  it('does not run a down SQL when the migration fails without one', async () => {
+    (readdirSync as jest.Mock).mockReturnValue(['001_create.sql']);
+    (readFileSync as jest.Mock).mockImplementation((path: string) =>
+      path.includes('down') ? '' : 'CREATE TABLE t (id INT);',
+    );
+    appConn.query.mockRejectedValueOnce(new Error('boom'));
+    service = await makeModule();
+
+    await expect(service.onApplicationBootstrap()).rejects.toThrow('boom');
+
+    expect(appConn.rollback).toHaveBeenCalled();
+    expect(appConn.query).not.toHaveBeenCalledWith('');
   });
 
   it('skips an already-executed migration when the hash matches', async () => {

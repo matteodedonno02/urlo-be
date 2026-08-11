@@ -29,6 +29,9 @@ export class MigrationsService implements OnApplicationBootstrap {
       return;
     }
 
+    await this.ensureDatabaseExists(migDb);
+    await this.ensureDatabaseExists(appDb);
+
     const appConn = await createConnection(this.dbOptions(appDb));
     const migConn = await createConnection(this.dbOptions(migDb));
 
@@ -60,6 +63,7 @@ export class MigrationsService implements OnApplicationBootstrap {
           '\n',
         );
         const hash = createHash('sha256').update(sql).digest('hex');
+        const downSql = this.loadDownMigration(file);
 
         const [rows] = await migConn.query(
           'SELECT hash FROM schema_migrations WHERE filename = ?',
@@ -77,7 +81,16 @@ export class MigrationsService implements OnApplicationBootstrap {
           continue;
         }
 
-        await appConn.query(sql);
+        await appConn.beginTransaction();
+        try {
+          await appConn.query(sql);
+          await appConn.commit();
+        } catch (err) {
+          await appConn.rollback();
+          await this.tryRollback(appConn, file, downSql);
+          throw err;
+        }
+
         await migConn.query(
           'INSERT INTO schema_migrations (filename, hash) VALUES (?, ?)',
           [file, hash],
@@ -87,6 +100,51 @@ export class MigrationsService implements OnApplicationBootstrap {
     } finally {
       await appConn.end();
       await migConn.end();
+    }
+  }
+
+  private loadDownMigration(file: string): string | null {
+    const downPath = join(process.cwd(), 'migrations', 'down', file);
+    try {
+      const sql = readFileSync(downPath, 'utf8').replace(/\r\n/g, '\n').trim();
+      return sql.length > 0 ? sql : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private async tryRollback(
+    appConn: Connection,
+    file: string,
+    downSql: string | null,
+  ): Promise<void> {
+    if (!downSql) {
+      return;
+    }
+    try {
+      await appConn.query(downSql);
+      this.logger.log(`Migration "${file}" failed; rolled back via down SQL.`);
+    } catch (err) {
+      this.logger.error(
+        `Migration "${file}" failed and its down SQL could not be applied: ${(err as Error).message}`,
+      );
+    }
+  }
+
+  private async ensureDatabaseExists(db: DbConfig): Promise<void> {
+    const serverConn = await createConnection({
+      host: db.host,
+      port: db.port,
+      user: db.username,
+      password: db.password,
+    });
+
+    try {
+      await serverConn.query(
+        `CREATE DATABASE IF NOT EXISTS \`${db.name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
+      );
+    } finally {
+      await serverConn.end();
     }
   }
 
