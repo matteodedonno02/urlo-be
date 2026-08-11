@@ -9,5 +9,6 @@ import { ShortUrlService } from './short-url.service';
   imports: [TypeOrmModule.forFeature([ShortUrl]), AuthModule],
   controllers: [ShortUrlController],
   providers: [ShortUrlService],
+  exports: [ShortUrlService],
 })
 export class ShortUrlModule {}

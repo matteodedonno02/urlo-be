@@ -1,6 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
+import { UserRole } from '../../models/user-role.enum';
 import { AuthService } from './auth.service';
 import { User } from '../user/entities/user.entity';
 import { UserService } from '../user/user.service';
@@ -25,6 +26,7 @@ describe('AuthService', () => {
     id: 'c3f6a2b8-9d1e-4f0a-8b7c-5e4d3c2b1a09',
     email: 'user@example.com',
     passwordHash: 'hashed-password',
+    role: UserRole.STANDARD,
     createdAt: new Date('2024-01-01T00:00:00Z'),
     updatedAt: new Date('2024-01-01T00:00:00Z'),
   };
@@ -55,6 +57,7 @@ describe('AuthService', () => {
       userService.toResponse.mockReturnValue({
         id: mockUser.id,
         email: mockUser.email,
+        role: mockUser.role,
         createdAt: mockUser.createdAt,
         updatedAt: mockUser.updatedAt,
       });
@@ -89,6 +92,7 @@ describe('AuthService', () => {
       expect(jwtService.signAsync).toHaveBeenCalledWith({
         sub: mockUser.id,
         email: mockUser.email,
+        role: mockUser.role,
       });
       expect(result).toEqual({ access_token: 'signed-token' });
     });

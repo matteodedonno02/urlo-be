@@ -5,6 +5,7 @@ import {
   PrimaryGeneratedColumn,
   UpdateDateColumn,
 } from 'typeorm';
+import { UserRole } from '../../../models/user-role.enum';
 
 @Entity('users')
 export class User {
@@ -16,6 +17,9 @@ export class User {
 
   @Column({ type: 'varchar', length: 255, name: 'password_hash' })
   passwordHash!: string;
+
+  @Column({ type: 'varchar', length: 20, default: UserRole.STANDARD })
+  role!: UserRole;
 
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt!: Date;

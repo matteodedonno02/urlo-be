@@ -10,6 +10,7 @@ const password = 'supersecret123';
 interface UserBody {
   id: string;
   email: string;
+  role: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,6 +47,7 @@ describe('Auth (e2e)', () => {
 
     const body = res.body as UserBody;
     expect(body.email).toBe(email);
+    expect(body.role).toBe('standard');
     expect(body.id).toBeDefined();
     expect(body).not.toHaveProperty('password');
     expect(body).not.toHaveProperty('passwordHash');

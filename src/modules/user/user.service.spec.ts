@@ -2,19 +2,21 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { ConflictException } from '@nestjs/common';
 import { Repository } from 'typeorm';
+import { UserRole } from '../../models/user-role.enum';
 import { UserService } from './user.service';
 import { User } from './entities/user.entity';
 
 describe('UserService', () => {
   let service: UserService;
   let repository: jest.Mocked<
-    Pick<Repository<User>, 'create' | 'findOneBy' | 'save'>
+    Pick<Repository<User>, 'create' | 'find' | 'findOneBy' | 'save'>
   >;
 
   const mockEntity = (overrides: Partial<User> = {}): User => ({
     id: 'c3f6a2b8-9d1e-4f0a-8b7c-5e4d3c2b1a09',
     email: 'user@example.com',
     passwordHash: 'hashed-password',
+    role: UserRole.STANDARD,
     createdAt: new Date('2024-01-01T00:00:00Z'),
     updatedAt: new Date('2024-01-01T00:00:00Z'),
     ...overrides,
@@ -23,6 +25,7 @@ describe('UserService', () => {
   beforeEach(async () => {
     repository = {
       create: jest.fn(),
+      find: jest.fn(),
       findOneBy: jest.fn(),
       save: jest.fn(),
     };
@@ -55,6 +58,7 @@ describe('UserService', () => {
       expect(repository.create).toHaveBeenCalledWith({
         email: 'user@example.com',
         passwordHash: 'hashed-password',
+        role: UserRole.STANDARD,
       });
       expect(result).toBe(entity);
     });
@@ -110,6 +114,23 @@ describe('UserService', () => {
     });
   });
 
+  describe('findAll', () => {
+    it('should return all users as responses ordered by creation date', async () => {
+      const entities = [mockEntity(), mockEntity({ id: 'other-id' })];
+      repository.find.mockResolvedValue(entities);
+
+      const result = await service.findAll();
+
+      expect(repository.find).toHaveBeenCalledWith({
+        order: { createdAt: 'DESC' },
+      });
+      expect(result).toEqual(
+        entities.map((entity) => service.toResponse(entity)),
+      );
+      expect(result[0]).not.toHaveProperty('passwordHash');
+    });
+  });
+
   describe('toResponse', () => {
     it('should strip the password hash from the response', () => {
       const result = service.toResponse(mockEntity());
@@ -117,6 +138,7 @@ describe('UserService', () => {
       expect(result).toEqual({
         id: 'c3f6a2b8-9d1e-4f0a-8b7c-5e4d3c2b1a09',
         email: 'user@example.com',
+        role: UserRole.STANDARD,
         createdAt: new Date('2024-01-01T00:00:00Z'),
         updatedAt: new Date('2024-01-01T00:00:00Z'),
       });

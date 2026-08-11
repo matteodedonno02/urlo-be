@@ -1,0 +1,159 @@
+import { Test, TestingModule } from '@nestjs/testing';
+import { INestApplication, ValidationPipe } from '@nestjs/common';
+import request from 'supertest';
+import { App } from 'supertest/types';
+import * as bcrypt from 'bcryptjs';
+import { UserRole } from './../src/models/user-role.enum';
+import { AppModule } from './../src/app.module';
+import { UserService } from './../src/modules/user/user.service';
+
+interface LoginBody {
+  access_token: string;
+}
+
+interface UserBody {
+  id: string;
+  email: string;
+  role: string;
+}
+
+describe('Admin (e2e)', () => {
+  let app: INestApplication<App>;
+  let adminToken = '';
+  let standardToken = '';
+  let standardUserId = '';
+
+  const adminEmail = `admin-${Date.now()}@example.com`;
+  const standardEmail = `standard-${Date.now()}@example.com`;
+  const password = 'supersecret123';
+  const originalUrl = 'https://example.com/admin-path';
+
+  const login = async (email: string) => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email, password })
+      .expect(200);
+    return (res.body as LoginBody).access_token;
+  };
+
+  const bearer = (token: string) => ({
+    Authorization: `Bearer ${token}`,
+  });
+
+  beforeAll(async () => {
+    process.env.NODE_ENV = 'dev';
+    const moduleFixture: TestingModule = await Test.createTestingModule({
+      imports: [AppModule],
+    }).compile();
+
+    app = moduleFixture.createNestApplication();
+    app.useGlobalPipes(
+      new ValidationPipe({ whitelist: true, transform: true }),
+    );
+    await app.init();
+
+    const userService = app.get(UserService);
+    await userService.create(
+      adminEmail,
+      await bcrypt.hash(password, 10),
+      UserRole.ADMIN,
+    );
+    const standard = await userService.create(
+      standardEmail,
+      await bcrypt.hash(password, 10),
+    );
+    standardUserId = standard.id;
+
+    adminToken = await login(adminEmail);
+    standardToken = await login(standardEmail);
+  });
+
+  afterAll(async () => {
+    await app.close();
+  });
+
+  it('GET /users rejects a missing token', async () => {
+    await request(app.getHttpServer()).get('/users').expect(401);
+  });
+
+  it('GET /users rejects a non-admin user', async () => {
+    await request(app.getHttpServer())
+      .get('/users')
+      .set(bearer(standardToken))
+      .expect(403);
+  });
+
+  it('GET /users lists users for an admin', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/users')
+      .set(bearer(adminToken))
+      .expect(200);
+
+    const body = res.body as UserBody[];
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.some((item) => item.email === adminEmail)).toBe(true);
+    expect(body.some((item) => item.email === standardEmail)).toBe(true);
+    expect(body[0]).not.toHaveProperty('password');
+    expect(body[0]).not.toHaveProperty('passwordHash');
+  });
+
+  it('GET /users/:id returns the user info for an admin', async () => {
+    const res = await request(app.getHttpServer())
+      .get(`/users/${standardUserId}`)
+      .set(bearer(adminToken))
+      .expect(200);
+
+    const body = res.body as UserBody;
+    expect(body.id).toBe(standardUserId);
+    expect(body.email).toBe(standardEmail);
+    expect(body.role).toBe(UserRole.STANDARD);
+    expect(body).not.toHaveProperty('passwordHash');
+  });
+
+  it('GET /users/:id returns 404 for an unknown user', async () => {
+    await request(app.getHttpServer())
+      .get('/users/does-not-exist')
+      .set(bearer(adminToken))
+      .expect(404);
+  });
+
+  it('GET /users/:id rejects a non-admin user', async () => {
+    await request(app.getHttpServer())
+      .get(`/users/${standardUserId}`)
+      .set(bearer(standardToken))
+      .expect(403);
+  });
+
+  it('GET /users/:id/short-urls lists the user short urls for an admin', async () => {
+    await request(app.getHttpServer())
+      .post('/short-urls')
+      .set(bearer(standardToken))
+      .send({ originalUrl })
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .get(`/users/${standardUserId}/short-urls`)
+      .set(bearer(adminToken))
+      .expect(200);
+
+    const body = res.body as Array<{ userId: string; originalUrl: string }>;
+    expect(Array.isArray(body)).toBe(true);
+    expect(body.length).toBeGreaterThan(0);
+    expect(body.some((item) => item.userId === standardUserId)).toBe(true);
+    expect(body.some((item) => item.originalUrl === originalUrl)).toBe(true);
+  });
+
+  it('GET /users/:id/short-urls returns 404 for an unknown user', async () => {
+    await request(app.getHttpServer())
+      .get('/users/does-not-exist/short-urls')
+      .set(bearer(adminToken))
+      .expect(404);
+  });
+
+  it('GET /users/:id/short-urls rejects a non-admin user', async () => {
+    await request(app.getHttpServer())
+      .get(`/users/${standardUserId}/short-urls`)
+      .set(bearer(standardToken))
+      .expect(403);
+  });
+});
