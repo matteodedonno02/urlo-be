@@ -1,10 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { Injectable, Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import * as bcrypt from 'bcryptjs';
 import { createHash, randomBytes } from 'crypto';
-import { Repository } from 'typeorm';
+import { In, IsNull, LessThanOrEqual, Not, Repository } from 'typeorm';
 import { JwtPayload } from '../../models/jwt-payload';
 import { CreateUserDto } from '../user/dto/create-user.dto';
 import { UserResponseDto } from '../user/dto/user-response.dto';
@@ -15,6 +15,8 @@ import { RefreshToken } from './entities/refresh-token.entity';
 const BCRYPT_ROUNDS = 10;
 const REFRESH_TOKEN_BYTES = 48;
 const DEFAULT_REFRESH_TTL = '7d';
+const CLEANUP_BATCH_SIZE = 200;
+const CLEANUP_MAX_BATCHES = 5;
 
 const DURATION_MULTIPLIERS: Record<string, number> = {
   ms: 1,
@@ -27,6 +29,8 @@ const DURATION_MULTIPLIERS: Record<string, number> = {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
+
   constructor(
     private readonly userService: UserService,
     private readonly jwtService: JwtService,
@@ -123,6 +127,7 @@ export class AuthService {
   private async issueRefreshToken(user: User): Promise<string> {
     const raw = randomBytes(REFRESH_TOKEN_BYTES).toString('base64url');
     const ttl = this.refreshTtlMs();
+    await this.cleanupExpiredTokens();
     await this.refreshTokenRepository.save(
       this.refreshTokenRepository.create({
         userId: user.id,
@@ -138,6 +143,35 @@ export class AuthService {
     await this.refreshTokenRepository.update(entity.id, {
       revokedAt: new Date(),
     });
+  }
+
+  private async cleanupExpiredTokens(): Promise<void> {
+    const now = new Date();
+    try {
+      for (let batch = 0; batch < CLEANUP_MAX_BATCHES; batch += 1) {
+        const expired = await this.refreshTokenRepository.find({
+          select: { id: true },
+          where: [
+            { expiresAt: LessThanOrEqual(now) },
+            { revokedAt: Not(IsNull()) },
+          ],
+          take: CLEANUP_BATCH_SIZE,
+        });
+        if (expired.length === 0) {
+          return;
+        }
+        await this.refreshTokenRepository.delete({
+          id: In(expired.map((token) => token.id)),
+        });
+        if (expired.length < CLEANUP_BATCH_SIZE) {
+          return;
+        }
+      }
+    } catch (err) {
+      this.logger.warn(
+        `Failed to clean up expired refresh tokens: ${(err as Error).message}`,
+      );
+    }
   }
 
   private toPayload(user: User): JwtPayload {

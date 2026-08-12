@@ -1,9 +1,10 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { UnauthorizedException } from '@nestjs/common';
+import { Logger, UnauthorizedException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import { getRepositoryToken } from '@nestjs/typeorm';
 import { createHash } from 'crypto';
+import { In } from 'typeorm';
 import { UserRole } from '../../models/user-role.enum';
 import { AuthService } from './auth.service';
 import { User } from '../user/entities/user.entity';
@@ -34,7 +35,10 @@ describe('AuthService', () => {
   let jwtService: jest.Mocked<Pick<JwtService, 'signAsync'>>;
   let configService: jest.Mocked<Pick<ConfigService, 'get'>>;
   let refreshTokenRepository: jest.Mocked<
-    Pick<RepositoryLike, 'create' | 'save' | 'findOneBy' | 'update'>
+    Pick<
+      RepositoryLike,
+      'create' | 'save' | 'findOneBy' | 'update' | 'find' | 'delete'
+    >
   >;
 
   type RepositoryLike = {
@@ -44,6 +48,8 @@ describe('AuthService', () => {
       criteria: Partial<RefreshToken>,
     ) => Promise<RefreshToken | null>;
     update: (id: string, data: Partial<RefreshToken>) => Promise<unknown>;
+    find: (options: unknown) => Promise<RefreshToken[]>;
+    delete: (criteria: unknown) => Promise<unknown>;
   };
 
   const mockUser: User = {
@@ -87,6 +93,8 @@ describe('AuthService', () => {
       save: jest.fn((entity: RefreshToken) => Promise.resolve(entity)),
       findOneBy: jest.fn(),
       update: jest.fn(() => Promise.resolve(undefined)),
+      find: jest.fn().mockResolvedValue([]),
+      delete: jest.fn().mockResolvedValue(undefined),
     };
 
     const app: TestingModule = await Test.createTestingModule({
@@ -206,6 +214,66 @@ describe('AuthService', () => {
         service.signIn('user@example.com', 'wrong-password'),
       ).rejects.toThrow(UnauthorizedException);
       expect(jwtService.signAsync).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('cleanup of expired refresh tokens', () => {
+    function signIn() {
+      return service.signIn('user@example.com', 'plain-password');
+    }
+
+    beforeEach(() => {
+      userService.findByEmail.mockResolvedValue(mockUser);
+      bcryptMock.compare.mockResolvedValue(true as never);
+    });
+
+    it('should delete expired and revoked tokens when issuing a refresh token', async () => {
+      refreshTokenRepository.find.mockResolvedValue([
+        { id: 'expired-1' },
+        { id: 'revoked-1' },
+      ] as RefreshToken[]);
+
+      await signIn();
+
+      expect(refreshTokenRepository.find).toHaveBeenCalled();
+      expect(refreshTokenRepository.delete).toHaveBeenCalledWith({
+        id: In(['expired-1', 'revoked-1']),
+      });
+    });
+
+    it('should not delete anything when there is nothing expired', async () => {
+      await signIn();
+
+      expect(refreshTokenRepository.find).toHaveBeenCalled();
+      expect(refreshTokenRepository.delete).not.toHaveBeenCalled();
+    });
+
+    it('should keep cleaning in batches while a full batch is found', async () => {
+      const fullBatch = Array.from({ length: 200 }, (_, i) => ({
+        id: `id-${i}`,
+      })) as RefreshToken[];
+      refreshTokenRepository.find
+        .mockResolvedValueOnce(fullBatch)
+        .mockResolvedValueOnce([]);
+
+      await signIn();
+
+      expect(refreshTokenRepository.find).toHaveBeenCalledTimes(2);
+      expect(refreshTokenRepository.delete).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not fail the auth flow when cleanup errors', async () => {
+      const warnSpy = jest
+        .spyOn(Logger.prototype, 'warn')
+        .mockImplementation(() => undefined);
+      refreshTokenRepository.find.mockRejectedValue(new Error('db down'));
+      jwtService.signAsync.mockResolvedValue('signed-token');
+
+      const result = await signIn();
+
+      expect(result.access_token).toBe('signed-token');
+      expect(warnSpy).toHaveBeenCalled();
+      warnSpy.mockRestore();
     });
   });
 
