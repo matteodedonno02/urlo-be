@@ -12,6 +12,10 @@ function coerce(value: string): unknown {
   }
 }
 
+function findKey(node: Record<string, unknown>, part: string): string | undefined {
+  return Object.keys(node).find((k) => k.toLowerCase() === part);
+}
+
 function applyEnvOverrides(config: Partial<AppConfig>): Partial<AppConfig> {
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
@@ -24,20 +28,20 @@ function applyEnvOverrides(config: Partial<AppConfig>): Partial<AppConfig> {
     if (path.length === 0) continue;
 
     const root = config as Record<string, unknown>;
-    if (path.length === 1 && !(path[0] in root)) continue;
-    let target: Record<string, unknown> = config as Record<string, unknown>;
+    if (path.length === 1 && !findKey(root, path[0])) continue;
+    let target: Record<string, unknown> = root;
 
     for (let i = 0; i < path.length - 1; i++) {
-      const part = path[i];
-      let next = target[part];
+      const resolved = findKey(target, path[i]) ?? path[i];
+      let next = target[resolved];
       if (next === undefined || typeof next !== 'object' || Array.isArray(next)) {
         next = {};
-        target[part] = next;
+        target[resolved] = next;
       }
       target = next as Record<string, unknown>;
     }
 
-    const last = path[path.length - 1];
+    const last = findKey(target, path[path.length - 1]) ?? path[path.length - 1];
     target[last] = coerce(value);
   }
 

@@ -1,0 +1,14 @@
+node_modules
+dist
+coverage
+docs
+.git
+.gitignore
+.env
+.env.*
+*.md
+config.*.json
+!config.example.json
+!config.docker.json
+test
+*.log
