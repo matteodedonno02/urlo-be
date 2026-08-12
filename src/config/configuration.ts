@@ -4,48 +4,60 @@ import { AppConfig } from '../models/app-config';
 
 const SEPARATOR = '__';
 
-function coerce(value: string): unknown {
+function normalizeSegment(segment: string): string {
+  return segment.replace(/_/g, '').toLowerCase();
+}
+
+function coerce(current: unknown, raw: string): unknown {
+  if (typeof current === 'number') {
+    const num = Number(raw);
+    return Number.isNaN(num) ? current : num;
+  }
+  if (typeof current === 'boolean') {
+    return raw === 'true' || raw === '1';
+  }
+  if (typeof current === 'string') {
+    return raw;
+  }
   try {
-    return JSON.parse(value);
+    return JSON.parse(raw);
   } catch {
-    return value;
+    return raw;
   }
 }
 
-function findKey(node: Record<string, unknown>, part: string): string | undefined {
-  return Object.keys(node).find((k) => k.toLowerCase() === part);
+function setValue(
+  node: Record<string, unknown>,
+  path: string[],
+  raw: string,
+): void {
+  const key = Object.keys(node).find((k) => normalizeSegment(k) === path[0]);
+  if (key === undefined) return;
+  if (path.length === 1) {
+    node[key] = coerce(node[key], raw);
+    return;
+  }
+  const current = node[key];
+  if (
+    current !== null &&
+    typeof current === 'object' &&
+    !Array.isArray(current)
+  ) {
+    setValue(current as Record<string, unknown>, path.slice(1), raw);
+  }
 }
 
-function applyEnvOverrides(config: Partial<AppConfig>): Partial<AppConfig> {
-  for (const [key, value] of Object.entries(process.env)) {
+export function applyEnvOverrides(
+  config: Partial<AppConfig>,
+): Partial<AppConfig> {
+  const result = structuredClone(config);
+  for (const [name, value] of Object.entries(process.env)) {
     if (value === undefined) continue;
-
-    const path = key
-      .split(SEPARATOR)
-      .map((part) => part.toLowerCase())
-      .filter((part) => part.length > 0);
-
-    if (path.length === 0) continue;
-
-    const root = config as Record<string, unknown>;
-    if (path.length === 1 && !findKey(root, path[0])) continue;
-    let target: Record<string, unknown> = root;
-
-    for (let i = 0; i < path.length - 1; i++) {
-      const resolved = findKey(target, path[i]) ?? path[i];
-      let next = target[resolved];
-      if (next === undefined || typeof next !== 'object' || Array.isArray(next)) {
-        next = {};
-        target[resolved] = next;
-      }
-      target = next as Record<string, unknown>;
-    }
-
-    const last = findKey(target, path[path.length - 1]) ?? path[path.length - 1];
-    target[last] = coerce(value);
+    const path = name.split(SEPARATOR).map(normalizeSegment);
+    if (path.length === 0 || path.some((segment) => segment === '')) continue;
+    setValue(result, path, value);
   }
-
-  return config;
+  return result;
 }
 
 export default (): Partial<AppConfig> => {

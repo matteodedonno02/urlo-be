@@ -56,11 +56,10 @@ export class AdminController {
     @Request() req: RequestWithUser,
     @Body() dto: ChangePasswordDto,
   ) {
-    await this.authService.changePassword(
+    return this.authService.changePassword(
       req.user.sub,
       dto.currentPassword,
       dto.newPassword,
     );
-    return { message: 'Password updated successfully' };
   }
 }

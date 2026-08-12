@@ -109,7 +109,7 @@ export class AuthService {
     userId: string,
     currentPassword: string,
     newPassword: string,
-  ): Promise<void> {
+  ): Promise<{ access_token: string; refresh_token: string }> {
     const user = await this.userService.findById(userId);
     if (!user) {
       throw new UnauthorizedException();
@@ -122,6 +122,16 @@ export class AuthService {
 
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS);
     await this.userService.updatePassword(userId, passwordHash);
+
+    const updated = await this.userService.findById(userId);
+    if (!updated) {
+      throw new UnauthorizedException();
+    }
+
+    return {
+      access_token: await this.jwtService.signAsync(this.toPayload(updated)),
+      refresh_token: await this.issueRefreshToken(updated),
+    };
   }
 
   private async issueRefreshToken(user: User): Promise<string> {

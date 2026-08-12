@@ -69,6 +69,18 @@ Copy the example config and adjust it to your environment:
 $ cp config.example.json config.dev.json
 ```
 
+### Environment variable overrides
+
+Any config value can be overridden through environment variables without editing the config files:
+
+- `_` separates words in a camelCase key: `REFRESH_EXPIRES_IN` overrides `jwt.refreshExpiresIn`.
+- `__` descends one nesting level: `DATABASE__HOST` overrides `database.host`.
+- Values are coerced to the type of the config key they override (string, number, boolean; arrays/objects are parsed as JSON).
+
+```bash
+$ DATABASE__HOST=mysql DATABASE__PASSWORD=secret JWT__SECRET=change-me npm run start
+```
+
 ## Compile and run the project
 
 ```bash

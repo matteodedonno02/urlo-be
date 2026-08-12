@@ -197,10 +197,22 @@ describe('Admin (e2e)', () => {
   it('PATCH /password changes the admin password', async () => {
     const newPassword = 'rotated-password-456';
 
-    await request(app.getHttpServer())
+    const changeRes = await request(app.getHttpServer())
       .patch('/password')
       .set(bearer(adminToken))
       .send({ currentPassword: password, newPassword })
+      .expect(200);
+
+    const tokens = changeRes.body as {
+      access_token: string;
+      refresh_token: string;
+    };
+    expect(tokens.access_token).toBeDefined();
+    expect(tokens.refresh_token).toBeDefined();
+
+    await request(app.getHttpServer())
+      .get('/users')
+      .set(bearer(tokens.access_token))
       .expect(200);
 
     const afterLogin = await request(app.getHttpServer())

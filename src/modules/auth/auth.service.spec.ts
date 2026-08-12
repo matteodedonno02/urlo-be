@@ -398,13 +398,14 @@ describe('AuthService', () => {
   });
 
   describe('changePassword', () => {
-    it('should update the password hash when the current password matches', async () => {
-      userService.findById.mockResolvedValue(mockUser);
+    it('should update the password hash and return fresh tokens', async () => {
+      userService.findById.mockResolvedValue({ ...mockUser, tokenVersion: 1 });
       bcryptMock.compare.mockResolvedValue(true as never);
       bcryptMock.hash.mockResolvedValue('new-hashed-password' as never);
       userService.updatePassword.mockResolvedValue(undefined);
+      jwtService.signAsync.mockResolvedValue('signed-token');
 
-      await service.changePassword(
+      const result = await service.changePassword(
         mockUser.id,
         'current-password',
         'new-password',
@@ -420,6 +421,15 @@ describe('AuthService', () => {
         mockUser.id,
         'new-hashed-password',
       );
+      expect(jwtService.signAsync).toHaveBeenCalledWith({
+        sub: mockUser.id,
+        email: mockUser.email,
+        role: mockUser.role,
+        ver: 1,
+      });
+      expect(result.access_token).toBe('signed-token');
+      expect(result.refresh_token).toBeDefined();
+      expect(refreshTokenRepository.save).toHaveBeenCalledTimes(1);
     });
 
     it('should throw UnauthorizedException for an unknown user', async () => {
