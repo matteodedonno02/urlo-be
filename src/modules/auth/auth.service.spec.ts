@@ -31,6 +31,7 @@ describe('AuthService', () => {
     passwordHash: 'hashed-password',
     role: UserRole.STANDARD,
     mustChangePassword: false,
+    tokenVersion: 0,
     createdAt: new Date('2024-01-01T00:00:00Z'),
     updatedAt: new Date('2024-01-01T00:00:00Z'),
   };
@@ -99,6 +100,7 @@ describe('AuthService', () => {
         sub: mockUser.id,
         email: mockUser.email,
         role: mockUser.role,
+        ver: mockUser.tokenVersion,
       });
       expect(result).toEqual({
         access_token: 'signed-token',

@@ -50,6 +50,16 @@ export class UserService {
       passwordHash,
       mustChangePassword: false,
     });
+    await this.bumpTokenVersion(id);
+  }
+
+  async updateRole(id: string, role: UserRole): Promise<void> {
+    await this.repository.update(id, { role });
+    await this.bumpTokenVersion(id);
+  }
+
+  private async bumpTokenVersion(id: string): Promise<void> {
+    await this.repository.increment({ id }, 'tokenVersion', 1);
   }
 
   async findAll(): Promise<UserResponseDto[]> {

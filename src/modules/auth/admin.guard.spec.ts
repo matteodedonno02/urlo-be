@@ -11,7 +11,12 @@ describe('AdminGuard', () => {
       switchToHttp: () => ({
         getRequest: () =>
           ({
-            user: { sub: 'user-id', email: 'user@example.com', role },
+            user: {
+              sub: 'user-id',
+              email: 'user@example.com',
+              role,
+              ver: 0,
+            },
           }) as RequestWithUser,
       }),
     }) as never;

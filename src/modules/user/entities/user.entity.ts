@@ -28,6 +28,9 @@ export class User {
   })
   mustChangePassword!: boolean;
 
+  @Column({ type: 'int', default: 0, name: 'token_version' })
+  tokenVersion!: number;
+
   @CreateDateColumn({ type: 'timestamp', name: 'created_at' })
   createdAt!: Date;
 

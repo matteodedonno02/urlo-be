@@ -9,7 +9,10 @@ import { User } from './entities/user.entity';
 describe('UserService', () => {
   let service: UserService;
   let repository: jest.Mocked<
-    Pick<Repository<User>, 'create' | 'find' | 'findOneBy' | 'save' | 'update'>
+    Pick<
+      Repository<User>,
+      'create' | 'find' | 'findOneBy' | 'save' | 'update' | 'increment'
+    >
   >;
 
   const mockEntity = (overrides: Partial<User> = {}): User => ({
@@ -18,6 +21,7 @@ describe('UserService', () => {
     passwordHash: 'hashed-password',
     role: UserRole.STANDARD,
     mustChangePassword: false,
+    tokenVersion: 0,
     createdAt: new Date('2024-01-01T00:00:00Z'),
     updatedAt: new Date('2024-01-01T00:00:00Z'),
     ...overrides,
@@ -30,6 +34,7 @@ describe('UserService', () => {
       findOneBy: jest.fn(),
       save: jest.fn(),
       update: jest.fn(),
+      increment: jest.fn(),
     };
 
     const app: TestingModule = await Test.createTestingModule({
@@ -139,8 +144,9 @@ describe('UserService', () => {
   });
 
   describe('updatePassword', () => {
-    it('should update the password hash and clear the change flag', async () => {
+    it('should update the password hash, clear the change flag, and bump the token version', async () => {
       repository.update.mockResolvedValue({ affected: 1 } as never);
+      repository.increment.mockResolvedValue({ affected: 1 } as never);
 
       await service.updatePassword('user-id', 'new-hashed-password');
 
@@ -148,6 +154,29 @@ describe('UserService', () => {
         passwordHash: 'new-hashed-password',
         mustChangePassword: false,
       });
+      expect(repository.increment).toHaveBeenCalledWith(
+        { id: 'user-id' },
+        'tokenVersion',
+        1,
+      );
+    });
+  });
+
+  describe('updateRole', () => {
+    it('should update the role and bump the token version', async () => {
+      repository.update.mockResolvedValue({ affected: 1 } as never);
+      repository.increment.mockResolvedValue({ affected: 1 } as never);
+
+      await service.updateRole('user-id', UserRole.ADMIN);
+
+      expect(repository.update).toHaveBeenCalledWith('user-id', {
+        role: UserRole.ADMIN,
+      });
+      expect(repository.increment).toHaveBeenCalledWith(
+        { id: 'user-id' },
+        'tokenVersion',
+        1,
+      );
     });
   });
 

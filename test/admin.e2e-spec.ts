@@ -3,9 +3,12 @@ import { INestApplication, ValidationPipe } from '@nestjs/common';
 import request from 'supertest';
 import { App } from 'supertest/types';
 import * as bcrypt from 'bcryptjs';
+import { Repository } from 'typeorm';
+import { getRepositoryToken } from '@nestjs/typeorm';
 import { UserRole } from './../src/models/user-role.enum';
 import { AppModule } from './../src/app.module';
 import { UserService } from './../src/modules/user/user.service';
+import { User } from './../src/modules/user/entities/user.entity';
 
 interface LoginBody {
   access_token: string;
@@ -211,6 +214,57 @@ describe('Admin (e2e)', () => {
     await request(app.getHttpServer())
       .post('/auth/login')
       .send({ email: adminEmail, password })
+      .expect(401);
+
+    await request(app.getHttpServer())
+      .get('/users')
+      .set(bearer(adminToken))
+      .expect(401);
+  });
+
+  it('revokes sessions after a role change', async () => {
+    const email = `demoted-${Date.now()}@example.com`;
+    await userService.create(
+      email,
+      await bcrypt.hash(password, 10),
+      UserRole.ADMIN,
+    );
+
+    const token = await login(email);
+    await request(app.getHttpServer())
+      .get('/users')
+      .set(bearer(token))
+      .expect(200);
+
+    const user = await userService.findByEmail(email);
+    expect(user).not.toBeNull();
+    await userService.updateRole(user!.id, UserRole.STANDARD);
+
+    await request(app.getHttpServer())
+      .get('/users')
+      .set(bearer(token))
+      .expect(401);
+  });
+
+  it('revokes sessions when the user is deleted', async () => {
+    const email = `deleted-${Date.now()}@example.com`;
+    const created = await userService.create(
+      email,
+      await bcrypt.hash(password, 10),
+    );
+
+    const token = await login(email);
+    await request(app.getHttpServer())
+      .get('/auth/profile')
+      .set(bearer(token))
+      .expect(200);
+
+    const repository = app.get<Repository<User>>(getRepositoryToken(User));
+    await repository.delete(created.id);
+
+    await request(app.getHttpServer())
+      .get('/auth/profile')
+      .set(bearer(token))
       .expect(401);
   });
 

@@ -20,11 +20,12 @@ describe('ShortUrlService', () => {
   >;
 
   const requester = (
-    overrides: Partial<{ sub: string; role: UserRole }> = {},
-  ): { sub: string; email: string; role: UserRole } => ({
+    overrides: Partial<{ sub: string; role: UserRole; ver: number }> = {},
+  ): { sub: string; email: string; role: UserRole; ver: number } => ({
     sub: 'user-1',
     email: 'user@example.com',
     role: UserRole.STANDARD,
+    ver: 0,
     ...overrides,
   });
 
