@@ -5,7 +5,7 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { Repository } from 'typeorm';
+import { Equal, LessThan, Like, Repository } from 'typeorm';
 import { UserRole } from '../../models/user-role.enum';
 import { ShortUrlService } from './short-url.service';
 import { ShortUrl } from './entities/short-url.entity';
@@ -155,6 +155,146 @@ describe('ShortUrlService', () => {
     });
   });
 
+  describe('findByUserIdPaginated', () => {
+    const baseEntity = (overrides: Partial<ShortUrl> = {}): ShortUrl =>
+      mockEntity({
+        id: `00000000-0000-4000-8000-${String(
+          Math.floor(Math.random() * 1e12),
+        ).padStart(12, '0')}`,
+        ...overrides,
+      });
+
+    it('should return the first page ordered by createdAt then id descending', async () => {
+      const entities = [baseEntity(), baseEntity()];
+      repository.find.mockResolvedValue(entities);
+
+      const result = await service.findByUserIdPaginated('user-1', {});
+
+      expect(repository.find).toHaveBeenCalledWith({
+        where: [{ userId: 'user-1' }],
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: 21,
+      });
+      expect(result.nextCursor).toBeNull();
+      expect(result.items).toHaveLength(entities.length);
+      expect(result.items.map((item) => item.id)).toEqual(
+        entities.map((entity) => entity.id),
+      );
+    });
+
+    it('should clamp the limit to the maximum of 100', async () => {
+      repository.find.mockResolvedValue([]);
+
+      await service.findByUserIdPaginated('user-1', { limit: 500 });
+
+      expect(repository.find).toHaveBeenCalledWith(
+        expect.objectContaining({ take: 101 }),
+      );
+    });
+
+    it('should expose a nextCursor when more pages are available', async () => {
+      const first = baseEntity();
+      const last = baseEntity();
+      const extra = baseEntity();
+      repository.find.mockResolvedValue([first, last, extra]);
+
+      const result = await service.findByUserIdPaginated('user-1', {
+        limit: 2,
+      });
+
+      const expectedCursor = Buffer.from(
+        `${last.createdAt.getTime()}:${last.id}`,
+      ).toString('base64url');
+      expect(result.items).toHaveLength(2);
+      expect(result.items[1].id).toBe(last.id);
+      expect(result.nextCursor).toBe(expectedCursor);
+    });
+
+    it('should filter by q across shortCode and originalUrl', async () => {
+      const entity = baseEntity();
+      repository.find.mockResolvedValue([entity]);
+
+      await service.findByUserIdPaginated('user-1', { q: 'example' });
+
+      expect(repository.find).toHaveBeenCalledWith({
+        where: [
+          { userId: 'user-1', shortCode: Like('%example%') },
+          { userId: 'user-1', originalUrl: Like('%example%') },
+        ],
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: 21,
+      });
+    });
+
+    it('should apply the cursor predicate to fetch the next page', async () => {
+      const anchor = baseEntity();
+      const cursor = Buffer.from(
+        `${anchor.createdAt.getTime()}:${anchor.id}`,
+      ).toString('base64url');
+      repository.find.mockResolvedValue([]);
+
+      await service.findByUserIdPaginated('user-1', { cursor });
+
+      expect(repository.find).toHaveBeenCalledWith({
+        where: [
+          { userId: 'user-1', createdAt: LessThan(anchor.createdAt) },
+          {
+            userId: 'user-1',
+            createdAt: Equal(anchor.createdAt),
+            id: LessThan(anchor.id),
+          },
+        ],
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: 21,
+      });
+    });
+
+    it('should combine q and cursor into a single where clause', async () => {
+      const anchor = baseEntity();
+      const cursor = Buffer.from(
+        `${anchor.createdAt.getTime()}:${anchor.id}`,
+      ).toString('base64url');
+      repository.find.mockResolvedValue([]);
+
+      await service.findByUserIdPaginated('user-1', { cursor, q: 'foo' });
+
+      expect(repository.find).toHaveBeenCalledWith({
+        where: [
+          {
+            userId: 'user-1',
+            createdAt: LessThan(anchor.createdAt),
+            shortCode: Like('%foo%'),
+          },
+          {
+            userId: 'user-1',
+            createdAt: LessThan(anchor.createdAt),
+            originalUrl: Like('%foo%'),
+          },
+          {
+            userId: 'user-1',
+            createdAt: Equal(anchor.createdAt),
+            id: LessThan(anchor.id),
+            shortCode: Like('%foo%'),
+          },
+          {
+            userId: 'user-1',
+            createdAt: Equal(anchor.createdAt),
+            id: LessThan(anchor.id),
+            originalUrl: Like('%foo%'),
+          },
+        ],
+        order: { createdAt: 'DESC', id: 'DESC' },
+        take: 21,
+      });
+    });
+
+    it('should throw BadRequestException for a malformed cursor', async () => {
+      await expect(
+        service.findByUserIdPaginated('user-1', { cursor: 'not-a-cursor' }),
+      ).rejects.toThrow('Invalid cursor');
+    });
+  });
+
   describe('findByShortCode', () => {
     it('should return the entity for an existing shortCode', async () => {
       const entity = mockEntity();
@@ -273,6 +413,60 @@ describe('ShortUrlService', () => {
       const result = await service.update(
         '1',
         { originalUrl: 'https://new.example.com' },
+        requester({ role: UserRole.ADMIN }),
+      );
+
+      expect(result.originalUrl).toBe('https://new.example.com');
+    });
+  });
+
+  describe('updateOriginalUrl', () => {
+    it('should update only the originalUrl of the owned short url', async () => {
+      const entity = mockEntity();
+      repository.findOneBy.mockResolvedValue(entity);
+      repository.save.mockResolvedValue({
+        ...entity,
+        originalUrl: 'https://new.example.com',
+      });
+
+      const result = await service.updateOriginalUrl(
+        '1',
+        'https://new.example.com',
+        requester(),
+      );
+
+      expect(entity.originalUrl).toBe('https://new.example.com');
+      expect(entity.shortCode).toBe('abc123');
+      expect(result.originalUrl).toBe('https://new.example.com');
+    });
+
+    it('should throw NotFoundException for an unknown id', async () => {
+      repository.findOneBy.mockResolvedValue(null);
+
+      await expect(
+        service.updateOriginalUrl('999', 'https://x.com', requester()),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    it('should throw ForbiddenException when the requester is not the owner', async () => {
+      repository.findOneBy.mockResolvedValue(mockEntity({ userId: 'other' }));
+
+      await expect(
+        service.updateOriginalUrl('1', 'https://x.com', requester()),
+      ).rejects.toThrow(ForbiddenException);
+    });
+
+    it('should allow an admin to update someone elses original url', async () => {
+      const entity = mockEntity({ userId: 'other' });
+      repository.findOneBy.mockResolvedValue(entity);
+      repository.save.mockResolvedValue({
+        ...entity,
+        originalUrl: 'https://new.example.com',
+      });
+
+      const result = await service.updateOriginalUrl(
+        '1',
+        'https://new.example.com',
         requester({ role: UserRole.ADMIN }),
       );
 

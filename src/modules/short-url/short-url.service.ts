@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -6,7 +7,8 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'crypto';
-import { Repository } from 'typeorm';
+import { Equal, LessThan, Like, Repository } from 'typeorm';
+import type { FindOptionsWhere } from 'typeorm';
 import { JwtPayload } from '../../models/jwt-payload';
 import { UserRole } from '../../models/user-role.enum';
 import { CreateShortUrlDto } from './dto/create-short-url.dto';
@@ -14,9 +16,18 @@ import { UpdateShortUrlDto } from './dto/update-short-url.dto';
 import { ShortUrlResponseDto } from './dto/short-url-response.dto';
 import { ShortUrl } from './entities/short-url.entity';
 import { isSafeRedirectUrl } from './validators/safe-redirect-url.validator';
+import type { QueryMyShortUrlsDto } from './dto/query-my-short-urls.dto';
 
 const SHORT_CODE_ALPHABET =
   'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-';
+
+const DEFAULT_PAGE_LIMIT = 20;
+const MAX_PAGE_LIMIT = 100;
+
+export interface PaginatedShortUrls {
+  items: ShortUrlResponseDto[];
+  nextCursor: string | null;
+}
 
 @Injectable()
 export class ShortUrlService {
@@ -58,6 +69,84 @@ export class ShortUrlService {
       order: { createdAt: 'DESC' },
     });
     return entities.map((entity) => this.toResponse(entity));
+  }
+
+  async findByUserIdPaginated(
+    userId: string,
+    query: QueryMyShortUrlsDto,
+  ): Promise<PaginatedShortUrls> {
+    const limit = Math.min(query.limit ?? DEFAULT_PAGE_LIMIT, MAX_PAGE_LIMIT);
+    const cursor = query.cursor ? this.decodeCursor(query.cursor) : null;
+    const q = query.q?.trim();
+
+    const where = this.buildOwnedUrlsWhere(userId, q, cursor);
+
+    const entities = await this.repository.find({
+      where,
+      order: { createdAt: 'DESC', id: 'DESC' },
+      take: limit + 1,
+    });
+
+    const hasMore = entities.length > limit;
+    const page = hasMore ? entities.slice(0, limit) : entities;
+
+    return {
+      items: page.map((entity) => this.toResponse(entity)),
+      nextCursor:
+        hasMore && page.length > 0
+          ? this.encodeCursor(page[page.length - 1])
+          : null,
+    };
+  }
+
+  private buildOwnedUrlsWhere(
+    userId: string,
+    q: string | undefined,
+    cursor: { createdAt: Date; id: string } | null,
+  ): FindOptionsWhere<ShortUrl>[] {
+    const branches: FindOptionsWhere<ShortUrl>[] = cursor
+      ? [
+          { userId, createdAt: LessThan(cursor.createdAt) },
+          {
+            userId,
+            createdAt: Equal(cursor.createdAt),
+            id: LessThan(cursor.id),
+          },
+        ]
+      : [{ userId }];
+
+    if (!q) {
+      return branches;
+    }
+
+    return branches.flatMap((branch) => [
+      { ...branch, shortCode: Like(`%${q}%`) },
+      { ...branch, originalUrl: Like(`%${q}%`) },
+    ]);
+  }
+
+  private encodeCursor(entity: ShortUrl): string {
+    const raw = `${entity.createdAt.getTime()}:${entity.id}`;
+    return Buffer.from(raw).toString('base64url');
+  }
+
+  private decodeCursor(cursor: string): { createdAt: Date; id: string } {
+    let raw: string;
+    try {
+      raw = Buffer.from(cursor, 'base64url').toString('utf8');
+    } catch {
+      throw new BadRequestException('Invalid cursor');
+    }
+    const separator = raw.indexOf(':');
+    if (separator === -1) {
+      throw new BadRequestException('Invalid cursor');
+    }
+    const timestamp = Number(raw.slice(0, separator));
+    const id = raw.slice(separator + 1);
+    if (!Number.isFinite(timestamp) || !id) {
+      throw new BadRequestException('Invalid cursor');
+    }
+    return { createdAt: new Date(timestamp), id };
   }
 
   async findByShortCode(shortCode: string): Promise<ShortUrl> {
@@ -108,6 +197,20 @@ export class ShortUrlService {
     } catch {
       throw new ConflictException('shortCode is already in use');
     }
+  }
+
+  async updateOriginalUrl(
+    id: string,
+    originalUrl: string,
+    requester: JwtPayload,
+  ): Promise<ShortUrlResponseDto> {
+    const entity = await this.repository.findOneBy({ id });
+    if (!entity) {
+      throw new NotFoundException(`Short URL with id "${id}" not found`);
+    }
+    this.assertCanModify(entity, requester);
+    entity.originalUrl = originalUrl;
+    return this.toResponse(await this.repository.save(entity));
   }
 
   async remove(id: string, requester: JwtPayload): Promise<void> {

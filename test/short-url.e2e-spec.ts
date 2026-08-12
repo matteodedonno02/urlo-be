@@ -36,6 +36,14 @@ describe('ShortUrl (e2e)', () => {
   const password = 'supersecret123';
   const originalUrl = 'https://example.com/path';
 
+  async function myShortUrls(token = accessToken): Promise<ShortUrlBody[]> {
+    const res = await request(app.getHttpServer())
+      .get('/short-urls/my')
+      .set('Authorization', `Bearer ${token}`)
+      .expect(200);
+    return (res.body as { items: ShortUrlBody[] }).items;
+  }
+
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
@@ -188,15 +196,84 @@ describe('ShortUrl (e2e)', () => {
   });
 
   it('GET /short-urls/my lists only the logged-in user short urls', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/short-urls/my')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
-
-    const body = res.body as ShortUrlBody[];
+    const body = await myShortUrls();
     expect(Array.isArray(body)).toBe(true);
     expect(body.some((item) => item.shortCode === shortCode)).toBe(true);
     expect(body.every((item) => item.userId === loginUserId)).toBe(true);
+  });
+
+  it('GET /short-urls/my paginates results with a cursor', async () => {
+    const base = `https://paginated-${Date.now()}.example.com`;
+    const ids = new Set<string>();
+    for (let i = 0; i < 3; i++) {
+      const res = await request(app.getHttpServer())
+        .post('/short-urls')
+        .set('Authorization', `Bearer ${accessToken}`)
+        .send({ originalUrl: `${base}/${i}` })
+        .expect(201);
+      ids.add((res.body as ShortUrlBody).id);
+    }
+
+    const q = encodeURIComponent(base);
+    const firstRes = await request(app.getHttpServer())
+      .get(`/short-urls/my?limit=2&q=${q}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    const firstBody = firstRes.body as {
+      items: ShortUrlBody[];
+      nextCursor: string | null;
+    };
+    expect(firstBody.items).toHaveLength(2);
+    expect(firstBody.nextCursor).not.toBeNull();
+
+    const secondRes = await request(app.getHttpServer())
+      .get(`/short-urls/my?limit=2&cursor=${firstBody.nextCursor}&q=${q}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+    const secondBody = secondRes.body as {
+      items: ShortUrlBody[];
+      nextCursor: string | null;
+    };
+    expect(secondBody.items).toHaveLength(1);
+    expect(secondBody.nextCursor).toBeNull();
+
+    const collected = [...firstBody.items, ...secondBody.items];
+    expect(collected).toHaveLength(3);
+    expect(new Set(collected.map((item) => item.id))).toEqual(ids);
+  });
+
+  it('GET /short-urls/my filters by q', async () => {
+    const needle = `needle-${Date.now()}`;
+    await request(app.getHttpServer())
+      .post('/short-urls')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ originalUrl: `https://${needle}.example.com` })
+      .expect(201);
+
+    const res = await request(app.getHttpServer())
+      .get(`/short-urls/my?q=${encodeURIComponent(needle)}`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(200);
+
+    const body = res.body as { items: ShortUrlBody[] };
+    expect(body.items.length).toBeGreaterThan(0);
+    expect(body.items.every((item) => item.originalUrl.includes(needle))).toBe(
+      true,
+    );
+  });
+
+  it('GET /short-urls/my rejects an invalid cursor', async () => {
+    await request(app.getHttpServer())
+      .get('/short-urls/my?cursor=garbage')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(400);
+  });
+
+  it('GET /short-urls/my rejects an invalid limit', async () => {
+    await request(app.getHttpServer())
+      .get('/short-urls/my?limit=0')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .expect(400);
   });
 
   it('GET /short-urls/:shortCode redirects to the original URL', async () => {
@@ -208,12 +285,7 @@ describe('ShortUrl (e2e)', () => {
   });
 
   it('GET /short-urls/:shortCode increments the visit count', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/short-urls/my')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
-
-    const body = res.body as ShortUrlBody[];
+    const body = await myShortUrls();
     const item = body.find((entry) => entry.shortCode === shortCode);
     expect(item?.visitCount).toBeGreaterThanOrEqual(1);
   });
@@ -225,11 +297,7 @@ describe('ShortUrl (e2e)', () => {
   });
 
   it('PATCH /short-urls/:id rejects a missing token', async () => {
-    const list = await request(app.getHttpServer())
-      .get('/short-urls/my')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
-    const body = list.body as ShortUrlBody[];
+    const body = await myShortUrls();
     const item = body.find((entry) => entry.shortCode === shortCode);
 
     await request(app.getHttpServer())
@@ -239,11 +307,7 @@ describe('ShortUrl (e2e)', () => {
   });
 
   it('PATCH /short-urls/:id rejects a non-owner', async () => {
-    const list = await request(app.getHttpServer())
-      .get('/short-urls/my')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
-    const body = list.body as ShortUrlBody[];
+    const body = await myShortUrls();
     const item = body.find((entry) => entry.shortCode === shortCode);
     expect(item?.userId).toBe(loginUserId);
 
@@ -255,11 +319,7 @@ describe('ShortUrl (e2e)', () => {
   });
 
   it('PATCH /short-urls/:id rejects an unsafe URL', async () => {
-    const list = await request(app.getHttpServer())
-      .get('/short-urls/my')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
-    const body = list.body as ShortUrlBody[];
+    const body = await myShortUrls();
     const item = body.find((entry) => entry.shortCode === shortCode);
 
     await request(app.getHttpServer())
@@ -270,11 +330,7 @@ describe('ShortUrl (e2e)', () => {
   });
 
   it('PATCH /short-urls/:id updates the short url', async () => {
-    const list = await request(app.getHttpServer())
-      .get('/short-urls/my')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
-    const body = list.body as ShortUrlBody[];
+    const body = await myShortUrls();
     const mine = body.filter((entry) => entry.userId === loginUserId);
     expect(mine.length).toBeGreaterThan(0);
 
@@ -289,12 +345,79 @@ describe('ShortUrl (e2e)', () => {
     expect(patched.originalUrl).toBe(updatedUrl);
   });
 
-  it('DELETE /short-urls/:id rejects a missing token', async () => {
-    const list = await request(app.getHttpServer())
-      .get('/short-urls/my')
+  it('PATCH /short-urls/:id/original-url rejects a missing token', async () => {
+    const body = await myShortUrls();
+    const item = body.find((entry) => entry.shortCode === shortCode);
+
+    await request(app.getHttpServer())
+      .patch(`/short-urls/${item!.id}/original-url`)
+      .send({ originalUrl: 'https://example.org' })
+      .expect(401);
+  });
+
+  it('PATCH /short-urls/:id/original-url rejects a non-owner', async () => {
+    const body = await myShortUrls();
+    const item = body.find((entry) => entry.shortCode === shortCode);
+
+    await request(app.getHttpServer())
+      .patch(`/short-urls/${item!.id}/original-url`)
+      .set('Authorization', `Bearer ${foreignToken}`)
+      .send({ originalUrl: 'https://example.org' })
+      .expect(403);
+  });
+
+  it('PATCH /short-urls/:id/original-url rejects an unsafe URL', async () => {
+    const body = await myShortUrls();
+    const item = body.find((entry) => entry.shortCode === shortCode);
+
+    await request(app.getHttpServer())
+      .patch(`/short-urls/${item!.id}/original-url`)
       .set('Authorization', `Bearer ${accessToken}`)
+      .send({ originalUrl: 'http://127.0.0.1' })
+      .expect(400);
+  });
+
+  it('PATCH /short-urls/:id/original-url rejects a missing originalUrl', async () => {
+    const body = await myShortUrls();
+    const item = body.find((entry) => entry.shortCode === shortCode);
+
+    await request(app.getHttpServer())
+      .patch(`/short-urls/${item!.id}/original-url`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({})
+      .expect(400);
+  });
+
+  it('PATCH /short-urls/:id/original-url returns 404 for an unknown id', async () => {
+    await request(app.getHttpServer())
+      .patch('/short-urls/00000000-0000-4000-8000-000000000000/original-url')
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ originalUrl: 'https://example.org' })
+      .expect(404);
+  });
+
+  it('PATCH /short-urls/:id/original-url updates only the originalUrl', async () => {
+    const body = await myShortUrls();
+    const item = body.find((entry) => entry.shortCode === shortCode);
+    const updatedUrl = `${originalUrl}/original-only`;
+
+    const res = await request(app.getHttpServer())
+      .patch(`/short-urls/${item!.id}/original-url`)
+      .set('Authorization', `Bearer ${accessToken}`)
+      .send({ originalUrl: updatedUrl })
       .expect(200);
-    const body = list.body as ShortUrlBody[];
+
+    const patched = res.body as ShortUrlBody;
+    expect(patched.originalUrl).toBe(updatedUrl);
+    expect(patched.shortCode).toBe(shortCode);
+
+    const after = await myShortUrls();
+    const updated = after.find((entry) => entry.id === item!.id);
+    expect(updated?.originalUrl).toBe(updatedUrl);
+  });
+
+  it('DELETE /short-urls/:id rejects a missing token', async () => {
+    const body = await myShortUrls();
     const item = body.find((entry) => entry.shortCode === shortCode);
 
     await request(app.getHttpServer())
@@ -303,11 +426,7 @@ describe('ShortUrl (e2e)', () => {
   });
 
   it('DELETE /short-urls/:id rejects a non-owner', async () => {
-    const list = await request(app.getHttpServer())
-      .get('/short-urls/my')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
-    const body = list.body as ShortUrlBody[];
+    const body = await myShortUrls();
     const item = body.find((entry) => entry.shortCode === shortCode);
     expect(item?.userId).toBe(loginUserId);
 
@@ -318,11 +437,7 @@ describe('ShortUrl (e2e)', () => {
   });
 
   it('DELETE /short-urls/:id removes the short url owned by the user', async () => {
-    const list = await request(app.getHttpServer())
-      .get('/short-urls/my')
-      .set('Authorization', `Bearer ${accessToken}`)
-      .expect(200);
-    const body = list.body as ShortUrlBody[];
+    const body = await myShortUrls();
     const mine = body.filter((entry) => entry.userId === loginUserId);
     expect(mine.length).toBeGreaterThan(0);
 
