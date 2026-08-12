@@ -6,7 +6,8 @@
   },
   "jwt": {
     "secret": "change-me",
-    "expiresIn": "1h"
+    "expiresIn": "1h",
+    "refreshExpiresIn": "7d"
   },
   "admin": {
     "email": "admin@urlo.local",

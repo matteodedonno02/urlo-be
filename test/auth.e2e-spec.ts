@@ -17,6 +17,7 @@ interface UserBody {
 
 interface LoginBody {
   access_token: string;
+  refresh_token: string;
 }
 
 describe('Auth (e2e)', () => {
@@ -82,6 +83,8 @@ describe('Auth (e2e)', () => {
     const body = res.body as LoginBody;
     expect(typeof body.access_token).toBe('string');
     expect(body.access_token.length).toBeGreaterThan(0);
+    expect(typeof body.refresh_token).toBe('string');
+    expect(body.refresh_token.length).toBeGreaterThan(0);
   });
 
   it('POST /auth/login rejects a wrong password', async () => {
@@ -124,5 +127,56 @@ describe('Auth (e2e)', () => {
 
     expect(res.body).toMatchObject({ email });
     expect((res.body as { sub: string }).sub).toBeDefined();
+  });
+
+  it('POST /auth/refresh issues new tokens from a valid refresh token', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email, password })
+      .expect(200);
+
+    const { refresh_token: refreshToken } = login.body as LoginBody;
+
+    const res = await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .send({ refresh_token: refreshToken })
+      .expect(200);
+
+    expect(typeof (res.body as LoginBody).access_token).toBe('string');
+    expect(typeof (res.body as LoginBody).refresh_token).toBe('string');
+    expect((res.body as LoginBody).refresh_token).not.toBe(refreshToken);
+  });
+
+  it('POST /auth/refresh rejects an invalid refresh token', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .send({ refresh_token: 'not-a-real-token' })
+      .expect(401);
+  });
+
+  it('POST /auth/refresh rejects a missing refresh token', async () => {
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .send({})
+      .expect(400);
+  });
+
+  it('POST /auth/logout revokes the refresh token', async () => {
+    const login = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ email, password })
+      .expect(200);
+
+    const { refresh_token: refreshToken } = login.body as LoginBody;
+
+    await request(app.getHttpServer())
+      .post('/auth/logout')
+      .send({ refresh_token: refreshToken })
+      .expect(204);
+
+    await request(app.getHttpServer())
+      .post('/auth/refresh')
+      .send({ refresh_token: refreshToken })
+      .expect(401);
   });
 });

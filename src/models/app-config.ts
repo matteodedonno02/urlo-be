@@ -7,6 +7,7 @@ export interface AppConfig {
   jwt?: {
     secret: string;
     expiresIn: string;
+    refreshExpiresIn: string;
   };
   admin?: {
     email: string;
