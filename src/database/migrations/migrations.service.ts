@@ -5,6 +5,7 @@ import { readdirSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { createConnection, type Connection } from 'mysql2/promise';
 import { DbConfig } from '../../models/db-config';
+import { ensureDatabaseExists } from '../ensure-database-exists';
 
 @Injectable()
 export class MigrationsService implements OnApplicationBootstrap {
@@ -29,8 +30,8 @@ export class MigrationsService implements OnApplicationBootstrap {
       return;
     }
 
-    await this.ensureDatabaseExists(migDb);
-    await this.ensureDatabaseExists(appDb);
+    await ensureDatabaseExists(migDb);
+    await ensureDatabaseExists(appDb);
 
     const appConn = await createConnection(this.dbOptions(appDb));
     const migConn = await createConnection(this.dbOptions(migDb));
@@ -128,23 +129,6 @@ export class MigrationsService implements OnApplicationBootstrap {
       this.logger.error(
         `Migration "${file}" failed and its down SQL could not be applied: ${(err as Error).message}`,
       );
-    }
-  }
-
-  private async ensureDatabaseExists(db: DbConfig): Promise<void> {
-    const serverConn = await createConnection({
-      host: db.host,
-      port: db.port,
-      user: db.username,
-      password: db.password,
-    });
-
-    try {
-      await serverConn.query(
-        `CREATE DATABASE IF NOT EXISTS \`${db.name}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci`,
-      );
-    } finally {
-      await serverConn.end();
     }
   }
 
